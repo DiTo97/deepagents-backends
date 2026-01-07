@@ -196,8 +196,7 @@ uv sync
 # Unit tests (mocked, no Docker)
 uv run pytest -m unit
 
-# Integration tests (requires Docker)
-docker-compose up -d
+# Integration tests (Docker services started automatically via pytest-docker)
 uv run pytest -m integration
 
 # All tests

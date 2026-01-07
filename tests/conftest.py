@@ -47,8 +47,38 @@ def docker_compose_file() -> str:
 
 @pytest.fixture(scope="session")
 def docker_compose_project_name() -> str:
-    """Unique project name for test isolation."""
+    """
+    Fixed project name for test isolation.
+    
+    Using a fixed name prevents orphaned containers when tests are interrupted
+    (e.g., debugging in IDE). The docker_setup fixture will clean up any
+    existing containers with this name before starting fresh.
+    """
     return "deepagents-backends-test"
+
+
+@pytest.fixture(scope="session")
+def docker_setup() -> list[str]:
+    """
+    Docker Compose commands to run before tests.
+    
+    - 'down -v' ensures clean state (removes any leftover containers/volumes)
+    - 'up --build --wait' starts services and waits for health checks
+    
+    The --wait flag respects the healthcheck configurations in docker-compose.yml,
+    so services will be ready when tests start.
+    """
+    return ["down -v", "up --build --wait"]
+
+
+@pytest.fixture(scope="session")
+def docker_cleanup() -> list[str]:
+    """
+    Docker Compose commands to run after tests.
+    
+    Removes containers and volumes to ensure clean state for next run.
+    """
+    return ["down -v"]
 
 
 # =============================================================================
@@ -57,23 +87,28 @@ def docker_compose_project_name() -> str:
 
 
 @pytest.fixture(scope="session")
-def minio_url(docker_services: Any) -> str:
-    """Get MinIO endpoint URL after service is ready."""
+def minio_url(docker_services: Any, docker_ip: str) -> str:
+    """
+    Get MinIO endpoint URL after service is ready.
+    
+    The docker_services fixture (from pytest-docker) ensures containers are
+    started via docker-compose. We wait for MinIO to accept connections and
+    create the test bucket.
+    """
+    port = docker_services.port_for("minio", 9000)
+    url = f"http://{docker_ip}:{port}"
+    
     docker_services.wait_until_responsive(
         timeout=30.0,
         pause=1.0,
-        check=lambda: _check_minio_ready(),
+        check=lambda: _check_minio_ready(url),
     )
-    return "http://localhost:9000"
+    return url
 
 
-def _check_minio_ready() -> bool:
+def _check_minio_ready(endpoint_url: str) -> bool:
     """Check if MinIO is ready and create test bucket."""
-    import socket
     try:
-        sock = socket.create_connection(("localhost", 9000), timeout=1)
-        sock.close()
-        
         # Create the test bucket using aioboto3
         async def create_bucket():
             import aioboto3
@@ -83,7 +118,7 @@ def _check_minio_ready() -> bool:
             )
             async with session.client(
                 "s3",
-                endpoint_url="http://localhost:9000",
+                endpoint_url=endpoint_url,
                 region_name="us-east-1",
                 use_ssl=False,
             ) as s3:
@@ -96,8 +131,6 @@ def _check_minio_ready() -> bool:
         
         asyncio.run(create_bucket())
         return True
-    except (OSError, ConnectionRefusedError):
-        return False
     except Exception:
         return False
 
@@ -129,21 +162,27 @@ async def s3_backend(s3_config: S3Config) -> AsyncGenerator[S3Backend, None]:
 
 
 @pytest.fixture(scope="session")
-def postgres_url(docker_services: Any) -> str:
-    """Get PostgreSQL connection info after service is ready."""
+def postgres_url(docker_services: Any, docker_ip: str) -> tuple[str, int]:
+    """
+    Get PostgreSQL connection info after service is ready.
+    
+    Returns a tuple of (host, port) for connecting to PostgreSQL.
+    """
+    port = docker_services.port_for("postgres", 5432)
+    
     docker_services.wait_until_responsive(
         timeout=30.0,
         pause=1.0,
-        check=lambda: _check_postgres_ready(),
+        check=lambda: _check_postgres_ready(docker_ip, port),
     )
-    return "localhost"
+    return (docker_ip, port)
 
 
-def _check_postgres_ready() -> bool:
+def _check_postgres_ready(host: str, port: int) -> bool:
     """Check if PostgreSQL is ready."""
     import socket
     try:
-        sock = socket.create_connection(("localhost", 5432), timeout=1)
+        sock = socket.create_connection((host, port), timeout=1)
         sock.close()
         return True
     except (OSError, ConnectionRefusedError):
@@ -151,11 +190,12 @@ def _check_postgres_ready() -> bool:
 
 
 @pytest.fixture
-def postgres_config(postgres_url: str) -> PostgresConfig:
+def postgres_config(postgres_url: tuple[str, int]) -> PostgresConfig:
     """PostgresConfig for test instance."""
+    host, port = postgres_url
     return PostgresConfig(
-        host=postgres_url,
-        port=5432,
+        host=host,
+        port=port,
         database="deepagents_test",
         user="postgres",
         password="postgres",

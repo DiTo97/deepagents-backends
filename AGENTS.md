@@ -37,8 +37,7 @@ uv sync
 # Unit tests only (mocked, no Docker)
 uv run pytest -m unit
 
-# Integration tests (requires Docker services)
-docker-compose up -d
+# Integration tests (Docker services started automatically via pytest-docker)
 uv run pytest -m integration
 
 # Specific backend tests
@@ -49,9 +48,16 @@ uv run pytest -m postgres    # PostgreSQL tests
 uv run pytest
 ```
 
-### Docker Services
-- **MinIO** (S3-compatible): `localhost:9000`, credentials `minioadmin/minioadmin`
-- **PostgreSQL**: `localhost:5432`, database `deepagents_test`, credentials `postgres/postgres`
+### Docker Services (managed by pytest-docker)
+Services are automatically started/stopped by pytest-docker using `docker-compose.yml`:
+- **MinIO** (S3-compatible): credentials `minioadmin/minioadmin`
+- **PostgreSQL**: database `deepagents_test`, credentials `postgres/postgres`
+
+For manual testing or running examples:
+```bash
+docker-compose up -d      # Start services
+docker-compose down -v    # Stop and cleanup
+```
 
 ## Code Style Guidelines
 
