@@ -1,8 +1,8 @@
-# DeepAgents Backends - Agent Instructions
+# AGENTS.md: Deep Agents Remote Backends
 
 ## Project Overview
 
-This library provides **S3Backend** and **PostgresBackend** implementations of LangChain DeepAgents' `BackendProtocol` for remote file storage. All operations are async-native with sync wrappers.
+This library provides **S3Backend** and **PostgresBackend** implementations of [LangChain Deep Agents'](https://github.com/langchain-ai/deepagents) `BackendProtocol` for remote file storage and middleware operations.
 
 **Installation:** `uv add deepagents-backends` or `uv sync` for development.
 

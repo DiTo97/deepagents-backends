@@ -13,7 +13,7 @@ For DeepAgent integration examples, see:
 - postgres_deep_agent.py - Full PostgreSQL backend with DeepAgent
 - composite_backend.py - Hybrid S3 + PostgreSQL storage
 
-These backends implement DeepAgents' BackendProtocol for remote file storage.
+These backends implement Deep Agents' BackendProtocol for remote file storage.
 
 Usage:
     uv run examples/basic_usage.py
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         edit_result = await backend.aedit(
             "/project/main.py",
             "Hello from PostgreSQL!",
-            "Hello from DeepAgents!",
+            "Hello from Deep Agents!",
         )
         print(f"Edit result: {edit_result}")
 
@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
 async def main() -> None:
     """Run all examples."""
-    print("DeepAgents Remote Backends - Low-level API Examples")
+    print("Deep Agents Remote Backends - Low-level API Examples")
     print("=" * 60)
     print()
     print("For DeepAgent integration examples, see:")
