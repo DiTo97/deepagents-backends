@@ -10,17 +10,28 @@ class TestPostgresBackendUnit:
     @pytest.fixture
     def mock_pool(self):
         with patch("psycopg_pool.AsyncConnectionPool", new_callable=MagicMock) as mock_pool_cls:
-            pool_instance = AsyncMock()
+            pool_instance = MagicMock()
             mock_pool_cls.return_value = pool_instance
             
             # Setup connection context
-            mock_conn = AsyncMock()
-            pool_instance.connection.return_value.__aenter__.return_value = mock_conn
+            # pool.connection() is synchronous but returns an async context manager
+            mock_conn_ctx = MagicMock()
+            pool_instance.connection = MagicMock(return_value=mock_conn_ctx)
+            mock_conn = MagicMock()
+            mock_conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_conn_ctx.__aexit__ = AsyncMock(return_value=None)
             
             # Setup cursor context
+            # conn.cursor() is synchronous but returns an async context manager
+            mock_cur_ctx = MagicMock()
+            mock_conn.cursor = MagicMock(return_value=mock_cur_ctx)
             mock_cur = AsyncMock()
-            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+            mock_cur_ctx.__aexit__ = AsyncMock(return_value=None)
+            
+            # conn.execute is async
             mock_conn.execute = AsyncMock()
+            mock_conn.commit = AsyncMock()
             
             yield pool_instance, mock_conn, mock_cur
 
@@ -40,8 +51,8 @@ class TestPostgresBackendUnit:
         mock_cur.fetchone.return_value = [json.dumps(content), None, None]
         
         result = await backend.aread("test.txt")
-        assert "1 | line1" in result
-        assert "2 | line2" in result
+        assert "1\tline1" in result
+        assert "2\tline2" in result
         
         # Verify query was executed
         assert mock_cur.execute.called

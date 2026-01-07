@@ -4,12 +4,17 @@ Pytest configuration and fixtures for deepagents-backends tests.
 
 import asyncio
 import os
+import sys
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
 import pytest
 
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+
+# Windows requires SelectorEventLoop for psycopg async
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def pytest_configure(config: Any) -> None:
@@ -63,13 +68,37 @@ def minio_url(docker_services: Any) -> str:
 
 
 def _check_minio_ready() -> bool:
-    """Check if MinIO is ready."""
+    """Check if MinIO is ready and create test bucket."""
     import socket
     try:
         sock = socket.create_connection(("localhost", 9000), timeout=1)
         sock.close()
+        
+        # Create the test bucket using aioboto3
+        async def create_bucket():
+            import aioboto3
+            session = aioboto3.Session(
+                aws_access_key_id="minioadmin",
+                aws_secret_access_key="minioadmin",
+            )
+            async with session.client(
+                "s3",
+                endpoint_url="http://localhost:9000",
+                region_name="us-east-1",
+                use_ssl=False,
+            ) as s3:
+                try:
+                    await s3.create_bucket(Bucket="test-bucket")
+                except s3.exceptions.BucketAlreadyOwnedByYou:
+                    pass
+                except s3.exceptions.BucketAlreadyExists:
+                    pass
+        
+        asyncio.run(create_bucket())
         return True
     except (OSError, ConnectionRefusedError):
+        return False
+    except Exception:
         return False
 
 

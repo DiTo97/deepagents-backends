@@ -512,6 +512,14 @@ class PostgresBackend(BackendProtocol):
         self._pool: psycopg_pool.AsyncConnectionPool | None = None
         self._initialized = False
 
+    def _storage_path(self, path: str) -> str:
+        """Convert virtual path to storage path (strip leading /)."""
+        return path.lstrip("/")
+
+    def _virtual_path(self, path: str) -> str:
+        """Convert storage path to virtual path (add leading /)."""
+        return "/" + path.lstrip("/")
+
     async def _ensure_pool(self) -> psycopg_pool.AsyncConnectionPool:
         """Lazily initialize the connection pool."""
         if self._pool is None:
@@ -560,12 +568,13 @@ class PostgresBackend(BackendProtocol):
 
     async def _get_file_data(self, path: str) -> dict[str, Any] | None:
         """Get file data from database."""
+        storage_path = self._storage_path(path)
         pool = await self._ensure_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     f"SELECT content, created_at, modified_at FROM {self._table} WHERE path = %s",
-                    (path,),
+                    (storage_path,),
                 )
                 row = await cur.fetchone()
                 if row:
@@ -577,6 +586,7 @@ class PostgresBackend(BackendProtocol):
 
     async def _put_file_data(self, path: str, data: dict[str, Any]) -> None:
         """Upsert file data to database."""
+        storage_path = self._storage_path(path)
         pool = await self._ensure_pool()
         content_json = json.dumps({"content": data.get("content", [])})
         async with pool.connection() as conn:
@@ -588,24 +598,27 @@ class PostgresBackend(BackendProtocol):
                     content = EXCLUDED.content,
                     modified_at = NOW()
                 """,
-                (path, content_json),
+                (storage_path, content_json),
             )
             await conn.commit()
 
     async def _exists(self, path: str) -> bool:
         """Check if file exists."""
+        storage_path = self._storage_path(path)
         pool = await self._ensure_pool()
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    f"SELECT 1 FROM {self._table} WHERE path = %s", (path,)
+                    f"SELECT 1 FROM {self._table} WHERE path = %s", (storage_path,)
                 )
                 return await cur.fetchone() is not None
 
     async def _list_paths(self, prefix: str = "/") -> list[tuple[str, datetime, int]]:
-        """List all paths with a prefix, returning (path, modified_at, size)."""
+        """List all paths with a prefix, returning (virtual_path, modified_at, size)."""
         pool = await self._ensure_pool()
-        like_pattern = prefix.rstrip("/") + "%" if prefix != "/" else "%"
+        # Convert virtual prefix to storage prefix
+        storage_prefix = self._storage_path(prefix)
+        like_pattern = storage_prefix + "%" if storage_prefix else "%"
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -618,7 +631,8 @@ class PostgresBackend(BackendProtocol):
                     """,
                     (like_pattern,),
                 )
-                return [(row[0], row[1], row[2]) for row in await cur.fetchall()]
+                # Return virtual paths
+                return [(self._virtual_path(row[0]), row[1], row[2]) for row in await cur.fetchall()]
 
     # -------------------------------------------------------------------------
     # BackendProtocol Implementation

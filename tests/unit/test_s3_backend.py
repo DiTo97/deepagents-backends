@@ -36,8 +36,8 @@ class TestS3BackendUnit:
         mock_s3_client.get_object.return_value = {"Body": mock_body}
 
         result = await backend.aread("test.txt")
-        assert "1 | line1" in result
-        assert "2 | line2" in result
+        assert "1\tline1" in result
+        assert "2\tline2" in result
         
         mock_s3_client.get_object.assert_called_with(
             Bucket="unit-test-bucket", 
