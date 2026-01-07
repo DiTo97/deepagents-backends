@@ -31,7 +31,7 @@ jobs:
         run: uv run pytest -m unit --cov=deepagents_backends --cov-report=xml
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
@@ -60,7 +60,7 @@ jobs:
         run: uv run pytest -m integration --cov=deepagents_backends --cov-report=xml
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
