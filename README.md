@@ -1,4 +1,4 @@
-# 🗄️ DeepAgents Remote Backends
+# 🗄️ Deep Agents Remote Backends
 
 **deepagents-backends** provides production-ready implementations of the [LangChain Deep Agents](https://github.com/langchain-ai/deepagents)' `BackendProtocol` for remote file storage, allowing your agents to maintain state across restarts and share files in distributed environments.
 
