@@ -12,15 +12,14 @@ import asyncio
 import fnmatch
 import json
 import re
+import threading
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, Coroutine
 
 import aioboto3
-import psycopg
 import psycopg_pool
 import wcmatch.glob as wcglob
 from botocore.config import Config as BotoConfig
@@ -44,6 +43,66 @@ if TYPE_CHECKING:
     from types_aiobotocore_s3 import S3Client
 
 __all__ = ["S3Backend", "S3Config", "PostgresBackend", "PostgresConfig"]
+
+
+class _AsyncThread(threading.Thread):
+    """helper thread class for running async coroutines in a separate thread"""
+
+    def __init__(self, coroutine: Coroutine[Any, Any, Any]):
+        self.coroutine = coroutine
+        self.result = None
+        self.exception = None
+
+        super().__init__(daemon=True)
+
+    def run(self):
+        try:
+            self.result = asyncio.run(self.coroutine)
+        except Exception as e:
+            self.exception = e
+
+
+def run_async_safely[T](coroutine: Coroutine[Any, Any, T], timeout: float | None = None) -> T:
+    """safely runs a coroutine with handling of an existing event loop.
+
+    This function detects if there's already a running event loop and uses
+    a separate thread if needed to avoid the "asyncio.run() cannot be called
+    from a running event loop" error. This is particularly useful in environments
+    like Jupyter notebooks, FastAPI applications, or other async frameworks.
+
+    Args:
+        coroutine: The coroutine to run
+        timeout: max seconds to wait for. None means hanging forever
+
+    Returns:
+        The result of the coroutine
+
+    Raises:
+        Any exception raised by the coroutine
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # There's a running loop, use a separate thread
+        thread = _AsyncThread(coroutine)
+        thread.start()
+        thread.join(timeout=timeout)
+
+        if thread.is_alive():
+            raise TimeoutError("The operation timed out after %f seconds" % timeout)
+
+        if thread.exception:
+            raise thread.exception
+
+        return thread.result
+    else:
+        if timeout:
+            coroutine = asyncio.wait_for(coroutine, timeout)
+
+        return asyncio.run(coroutine)
 
 
 # =============================================================================
@@ -187,7 +246,7 @@ class S3Backend(BackendProtocol):
 
     def ls_info(self, path: str) -> list[FileInfo]:
         """Sync wrapper for als_info."""
-        return asyncio.get_event_loop().run_until_complete(self.als_info(path))
+        return run_async_safely(self.als_info(path))
 
     async def als_info(self, path: str) -> list[FileInfo]:
         """List files in a directory."""
@@ -230,7 +289,7 @@ class S3Backend(BackendProtocol):
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
         """Sync wrapper for aread."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.aread(file_path, offset, limit)
         )
 
@@ -254,7 +313,7 @@ class S3Backend(BackendProtocol):
 
     def write(self, file_path: str, content: str) -> WriteResult:
         """Sync wrapper for awrite."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.awrite(file_path, content)
         )
 
@@ -286,7 +345,7 @@ class S3Backend(BackendProtocol):
         replace_all: bool = False,
     ) -> EditResult:
         """Sync wrapper for aedit."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.aedit(file_path, old_string, new_string, replace_all)
         )
 
@@ -323,7 +382,7 @@ class S3Backend(BackendProtocol):
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> list[GrepMatch] | str:
         """Sync wrapper for agrep_raw."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.agrep_raw(pattern, path, glob)
         )
 
@@ -359,7 +418,7 @@ class S3Backend(BackendProtocol):
 
     def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
         """Sync wrapper for aglob_info."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.aglob_info(pattern, path)
         )
 
@@ -390,7 +449,7 @@ class S3Backend(BackendProtocol):
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Sync wrapper for aupload_files."""
-        return asyncio.get_event_loop().run_until_complete(self.aupload_files(files))
+        return run_async_safely(self.aupload_files(files))
 
     async def aupload_files(
         self, files: list[tuple[str, bytes]]
@@ -423,7 +482,7 @@ class S3Backend(BackendProtocol):
 
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """Sync wrapper for adownload_files."""
-        return asyncio.get_event_loop().run_until_complete(self.adownload_files(paths))
+        return run_async_safely(self.adownload_files(paths))
 
     async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """Download multiple files."""
@@ -640,7 +699,7 @@ class PostgresBackend(BackendProtocol):
 
     def ls_info(self, path: str) -> list[FileInfo]:
         """Sync wrapper for als_info."""
-        return asyncio.get_event_loop().run_until_complete(self.als_info(path))
+        return run_async_safely(self.als_info(path))
 
     async def als_info(self, path: str) -> list[FileInfo]:
         """List files in a directory."""
@@ -674,7 +733,7 @@ class PostgresBackend(BackendProtocol):
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
         """Sync wrapper for aread."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.aread(file_path, offset, limit)
         )
 
@@ -698,7 +757,7 @@ class PostgresBackend(BackendProtocol):
 
     def write(self, file_path: str, content: str) -> WriteResult:
         """Sync wrapper for awrite."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.awrite(file_path, content)
         )
 
@@ -725,7 +784,7 @@ class PostgresBackend(BackendProtocol):
         replace_all: bool = False,
     ) -> EditResult:
         """Sync wrapper for aedit."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.aedit(file_path, old_string, new_string, replace_all)
         )
 
@@ -762,7 +821,7 @@ class PostgresBackend(BackendProtocol):
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> list[GrepMatch] | str:
         """Sync wrapper for agrep_raw."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.agrep_raw(pattern, path, glob)
         )
 
@@ -796,7 +855,7 @@ class PostgresBackend(BackendProtocol):
 
     def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
         """Sync wrapper for aglob_info."""
-        return asyncio.get_event_loop().run_until_complete(
+        return run_async_safely(
             self.aglob_info(pattern, path)
         )
 
@@ -823,7 +882,7 @@ class PostgresBackend(BackendProtocol):
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Sync wrapper for aupload_files."""
-        return asyncio.get_event_loop().run_until_complete(self.aupload_files(files))
+        return run_async_safely(self.aupload_files(files))
 
     async def aupload_files(
         self, files: list[tuple[str, bytes]]
@@ -857,7 +916,7 @@ class PostgresBackend(BackendProtocol):
 
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """Sync wrapper for adownload_files."""
-        return asyncio.get_event_loop().run_until_complete(self.adownload_files(paths))
+        return run_async_safely(self.adownload_files(paths))
 
     async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """Download multiple files."""
