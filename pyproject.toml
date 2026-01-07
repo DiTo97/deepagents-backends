@@ -1,7 +1,7 @@
 [project]
 name = "deepagents-backends"
 version = "0.1.0"
-description = "S3 and PostgreSQL remote backends for LangChain DeepAgents"
+description = "S3 and PostgreSQL remote backends for LangChain Deep Agents"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

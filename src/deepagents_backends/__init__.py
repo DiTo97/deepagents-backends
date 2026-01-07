@@ -1,7 +1,7 @@
 """
-DeepAgents Remote Backends
+Deep Agents Remote Backends
 
-S3 and PostgreSQL backend implementations for LangChain's DeepAgents.
+S3 and PostgreSQL backend implementations for LangChain's Deep Agents.
 Supports any S3-compatible storage (AWS S3, MinIO, etc.) and PostgreSQL
 with connection pooling for optimal performance.
 """
@@ -129,7 +129,7 @@ class S3Config:
 
 class S3Backend(BackendProtocol):
     """
-    S3-compatible backend for DeepAgents file operations.
+    S3-compatible backend for Deep Agents file operations.
 
     Supports AWS S3, MinIO, and any S3-compatible object storage.
     All operations are async-native using aioboto3.
@@ -553,7 +553,7 @@ class PostgresConfig:
 
 class PostgresBackend(BackendProtocol):
     """
-    PostgreSQL backend for DeepAgents file operations.
+    PostgreSQL backend for Deep Agents file operations.
 
     Uses psycopg3 with connection pooling for high-performance async operations.
     Files are stored in a table with path as primary key and content as JSONB.
