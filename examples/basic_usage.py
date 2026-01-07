@@ -1,8 +1,22 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "deepagents-backends",
+# ]
+# ///
 """
-Example usage of DeepAgents Remote Backends.
+Basic Backend Operations Example
 
-This module demonstrates how to use S3Backend and PostgresBackend
-with DeepAgents for distributed file storage.
+This module demonstrates the low-level API of S3Backend and PostgresBackend.
+For DeepAgent integration examples, see:
+- s3_deep_agent.py - Full S3 backend with DeepAgent
+- postgres_deep_agent.py - Full PostgreSQL backend with DeepAgent
+- composite_backend.py - Hybrid S3 + PostgreSQL storage
+
+These backends implement DeepAgents' BackendProtocol for remote file storage.
+
+Usage:
+    uv run examples/basic_usage.py
 """
 
 import asyncio
@@ -10,41 +24,33 @@ import asyncio
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
 
 
-async def s3_example() -> None:
-    """Example: Using S3Backend with MinIO or AWS S3."""
+async def s3_backend_operations() -> None:
+    """Demonstrate low-level S3Backend file operations."""
     print("=" * 60)
-    print("S3 Backend Example")
+    print("S3 Backend - Low-level Operations")
     print("=" * 60)
 
     # Configure for MinIO (local S3-compatible storage)
     config = S3Config(
-        bucket="deepagents-files",
+        bucket="test-bucket",
         prefix="agent-workspace",
-        endpoint_url="http://localhost:9000",  # MinIO endpoint
+        endpoint_url="http://localhost:9000",
         access_key_id="minioadmin",
         secret_access_key="minioadmin",
         use_ssl=False,
     )
 
-    # For AWS S3, use:
-    # config = S3Config(
-    #     bucket="my-deepagents-bucket",
-    #     prefix="production/agent-files",
-    #     region="us-west-2",
-    #     # Credentials from environment or IAM role
-    # )
-
     backend = S3Backend(config)
 
-    # Write a file
+    # Write a file (fails if exists - use edit for modifications)
     result = await backend.awrite("/src/hello.py", 'print("Hello, World!")')
     print(f"Write result: {result}")
 
-    # Read the file
+    # Read the file (supports offset/limit for pagination)
     content = await backend.aread("/src/hello.py")
     print(f"Read content:\n{content}")
 
-    # Edit the file
+    # Edit the file (string replacement)
     edit_result = await backend.aedit(
         "/src/hello.py",
         "Hello, World!",
@@ -52,37 +58,40 @@ async def s3_example() -> None:
     )
     print(f"Edit result: {edit_result}")
 
-    # List files
+    # List files in directory
     files = await backend.als_info("/src")
     print(f"Files in /src: {files}")
 
-    # Search with grep
+    # Glob pattern matching
+    py_files = await backend.aglob_info("**/*.py", "/")
+    print(f"All Python files: {py_files}")
+
+    # Grep search with line numbers
     matches = await backend.agrep_raw("Hello", "/src", "*.py")
     print(f"Grep matches: {matches}")
 
-    # Upload raw bytes
+    # Batch upload raw bytes
     responses = await backend.aupload_files([
         ("/data/config.json", b'{"version": 1}'),
         ("/data/readme.txt", b"This is a readme file."),
     ])
     print(f"Upload responses: {responses}")
 
-    # Download files
+    # Download files as bytes
     downloads = await backend.adownload_files(["/data/config.json"])
     print(f"Download responses: {downloads}")
 
 
-async def postgres_example() -> None:
-    """Example: Using PostgresBackend with connection pooling."""
+async def postgres_backend_operations() -> None:
+    """Demonstrate low-level PostgresBackend file operations."""
     print("\n" + "=" * 60)
-    print("PostgreSQL Backend Example")
+    print("PostgreSQL Backend - Low-level Operations")
     print("=" * 60)
 
-    # Configure PostgreSQL connection
     config = PostgresConfig(
         host="localhost",
         port=5432,
-        database="deepagents",
+        database="deepagents_test",
         user="postgres",
         password="postgres",
         table="agent_files",
@@ -93,7 +102,7 @@ async def postgres_example() -> None:
     backend = PostgresBackend(config)
 
     try:
-        # Initialize the database schema
+        # Initialize creates table and indexes
         await backend.initialize()
         print("Database initialized successfully")
 
@@ -126,10 +135,10 @@ if __name__ == "__main__":
         print(f"Files in /project: {files}")
 
         # Glob search
-        py_files = await backend.aglob_info("*.py", "/project")
+        py_files = await backend.aglob_info("**/*.py", "/")
         print(f"Python files: {py_files}")
 
-        # Grep search
+        # Grep search with line numbers
         matches = await backend.agrep_raw("def ", "/project")
         print(f"Grep matches for 'def ': {matches}")
 
@@ -146,81 +155,22 @@ if __name__ == "__main__":
         print("Connection pool closed")
 
 
-async def deepagents_integration_example() -> None:
-    """Example: Integrating with DeepAgents."""
-    print("\n" + "=" * 60)
-    print("DeepAgents Integration Example")
-    print("=" * 60)
-
-    print("""
-# Using S3Backend with DeepAgents:
-
-from deepagents import DeepAgent
-from main import S3Backend, S3Config
-
-# Create S3 backend
-s3_config = S3Config(
-    bucket="my-agents",
-    endpoint_url="http://minio:9000",
-    access_key_id="minioadmin",
-    secret_access_key="minioadmin",
-)
-backend = S3Backend(s3_config)
-
-# Create agent with S3 backend
-agent = DeepAgent(
-    model="claude-3-5-sonnet-20241022",
-    backend=backend,
-)
-
-# Run the agent - files will be stored in S3
-result = agent.run("Create a Python project structure")
-
-
-# Using PostgresBackend with DeepAgents:
-
-from main import PostgresBackend, PostgresConfig
-
-# Create PostgreSQL backend
-pg_config = PostgresConfig(
-    host="postgres.example.com",
-    database="agents_db",
-    user="agent_user",
-    password="secure_password",
-)
-pg_backend = PostgresBackend(pg_config)
-
-# Initialize schema (run once)
-await pg_backend.initialize()
-
-# Create agent with PostgreSQL backend
-agent = DeepAgent(
-    model="gpt-4o",
-    backend=pg_backend,
-)
-
-# Run the agent - files will be stored in PostgreSQL
-result = agent.run("Analyze the codebase and create tests")
-
-# Don't forget to close the pool when done
-await pg_backend.close()
-""")
-
-
 async def main() -> None:
     """Run all examples."""
-    print("DeepAgents Remote Backends - Examples")
+    print("DeepAgents Remote Backends - Low-level API Examples")
     print("=" * 60)
     print()
-    print("Note: These examples require running S3/MinIO and PostgreSQL.")
-    print("Uncomment the example you want to run.\n")
+    print("For DeepAgent integration examples, see:")
+    print("  - examples/s3_deep_agent.py")
+    print("  - examples/postgres_deep_agent.py")
+    print("  - examples/composite_backend.py")
+    print()
+    print("Prerequisites: docker-compose up -d")
+    print()
 
-    # Uncomment to run examples (requires running services):
-    # await s3_example()
-    # await postgres_example()
-
-    # This example just prints usage patterns
-    await deepagents_integration_example()
+    # Uncomment to run:
+    # await s3_backend_operations()
+    # await postgres_backend_operations()
 
 
 if __name__ == "__main__":
