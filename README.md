@@ -1,11 +1,13 @@
 # 🗄️ DeepAgents Remote Backends
 
-Remote storage backends for [LangChain DeepAgents](https://github.com/langchain-ai/langchain). Store agent files in **S3** or **PostgreSQL** instead of ephemeral state, enabling persistent storage, distributed execution, and multi-agent file sharing.
+**deepagents-backends** provides production-ready implementations of the [LangChain Deep Agents](https://github.com/langchain-ai/deepagents)' `BackendProtocol` for remote file storage, allowing your agents to maintain state across restarts and share files in distributed environments.
+
+Store agent files in **S3** or **PostgreSQL** instead of ephemeral state, enabling persistent storage, distributed execution, and multi-agent file sharing.
 
 ## 🚀 Quickstart
 
 ```bash
-pip install deepagents deepagents-backends
+pip install deepagents-backends
 ```
 
 ### S3 Backend
