@@ -26,7 +26,7 @@ Each backend implements both sync and async versions:
 - `ls_info`/`als_info`, `glob_info`/`aglob_info`, `grep_raw`/`agrep_raw`
 - `upload_files`/`aupload_files`, `download_files`/`adownload_files`
 
-Sync methods use `asyncio.get_event_loop().run_until_complete()`.
+Sync methods use `run_async_safely()`.
 
 ## Build and Test Commands
 
