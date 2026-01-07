@@ -41,21 +41,8 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      minio:
-        image: minio/minio:latest
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        options: >-
-          --health-cmd "mc ready local || exit 1"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         ports:
           - 5432:5432
         env:
@@ -70,6 +57,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data --console-address ":9001"
+          # Wait for MinIO to be ready
+          for i in {1..30}; do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"
+              break
+            fi
+            echo "Waiting for MinIO..."
+            sleep 1
+          done
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
