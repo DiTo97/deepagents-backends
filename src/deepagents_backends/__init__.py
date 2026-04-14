@@ -393,30 +393,51 @@ class S3Backend(BackendProtocol):
     async def agrep_raw(
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> list[GrepMatch] | str:
-        """Search for pattern in files."""
+        """Search for pattern in files.
+
+        Applies filename (glob) filtering immediately after listing — before
+        any object GET — and reuses a single S3 client session for both the
+        listing and all subsequent content fetches, eliminating N separate
+        session setups.
+        """
         try:
             regex = re.compile(pattern)
         except re.error as e:
             return f"Invalid regex pattern: {e}"
 
         search_prefix = (path or "/").lstrip("/")
-        objects = await self._list_keys(search_prefix)
+        full_prefix = self._s3_key(search_prefix)
         matches: list[GrepMatch] = []
 
-        for obj in objects:
-            vpath = self._virtual_path(obj["Key"])
-            filename = PurePosixPath(vpath).name
+        async with self._client() as client:
+            # ── Step 1: list candidate objects ───────────────────────────
+            paginator = client.get_paginator("list_objects_v2")
+            candidates: list[tuple[str, str]] = []  # (s3_key, virtual_path)
+            async for page in paginator.paginate(
+                Bucket=self._bucket, Prefix=full_prefix
+            ):
+                for obj in page.get("Contents", []):
+                    vpath = self._virtual_path(obj["Key"])
+                    filename = PurePosixPath(vpath).name
+                    if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
+                        continue
+                    candidates.append((obj["Key"], vpath))
 
-            if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
-                continue
+            # ── Step 2: fetch content — shared session, no per-file setup ─
+            for key, vpath in candidates:
+                try:
+                    response = await client.get_object(Bucket=self._bucket, Key=key)
+                    async with response["Body"] as stream:
+                        raw = await stream.read()
+                    data = json.loads(raw.decode("utf-8"))
+                except ClientError as e:
+                    if e.response["Error"]["Code"] == "NoSuchKey":
+                        continue
+                    raise
 
-            data = await self._get_file_data(vpath)
-            if data is None:
-                continue
-
-            for line_num, line in enumerate(data.get("content", []), 1):
-                if regex.search(line):
-                    matches.append({"path": vpath, "line": line_num, "text": line})
+                for line_num, line in enumerate(data.get("content", []), 1):
+                    if regex.search(line):
+                        matches.append({"path": vpath, "line": line_num, "text": line})
 
         return matches
 
