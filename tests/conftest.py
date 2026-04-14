@@ -5,7 +5,7 @@ Pytest configuration and fixtures for deepagents-backends tests.
 import asyncio
 import os
 import sys
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
@@ -61,7 +61,7 @@ def docker_compose_file() -> str:
 def docker_compose_project_name() -> str:
     """
     Fixed project name for test isolation.
-    
+
     Using a fixed name prevents orphaned containers when tests are interrupted
     (e.g., debugging in IDE). The docker_setup fixture will clean up any
     existing containers with this name before starting fresh.
@@ -73,10 +73,10 @@ def docker_compose_project_name() -> str:
 def docker_setup() -> list[str]:
     """
     Docker Compose commands to run before tests.
-    
+
     - 'down -v' ensures clean state (removes any leftover containers/volumes)
     - 'up --build --wait' starts services and waits for health checks
-    
+
     The --wait flag respects the healthcheck configurations in docker-compose.yml,
     so services will be ready when tests start.
     """
@@ -87,7 +87,7 @@ def docker_setup() -> list[str]:
 def docker_cleanup() -> list[str]:
     """
     Docker Compose commands to run after tests.
-    
+
     Removes containers and volumes to ensure clean state for next run.
     """
     return ["down -v"]
@@ -102,14 +102,14 @@ def docker_cleanup() -> list[str]:
 def minio_url(docker_services: Any, docker_ip: str) -> str:
     """
     Get MinIO endpoint URL after service is ready.
-    
+
     The docker_services fixture (from pytest-docker) ensures containers are
     started via docker-compose. We wait for MinIO to accept connections and
     create the test bucket.
     """
     port = docker_services.port_for("minio", 9000)
     url = f"http://{docker_ip}:{port}"
-    
+
     docker_services.wait_until_responsive(
         timeout=30.0,
         pause=1.0,
@@ -140,7 +140,7 @@ def _check_minio_ready(endpoint_url: str) -> bool:
                     pass
                 except s3.exceptions.BucketAlreadyExists:
                     pass
-        
+
         asyncio.run(create_bucket())
         return True
     except Exception:
@@ -177,11 +177,11 @@ async def s3_backend(s3_config: S3Config) -> AsyncGenerator[S3Backend, None]:
 def postgres_url(docker_services: Any, docker_ip: str) -> tuple[str, int]:
     """
     Get PostgreSQL connection info after service is ready.
-    
+
     Returns a tuple of (host, port) for connecting to PostgreSQL.
     """
     port = docker_services.port_for("postgres", 5432)
-    
+
     docker_services.wait_until_responsive(
         timeout=30.0,
         pause=1.0,

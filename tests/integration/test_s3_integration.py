@@ -7,10 +7,8 @@ from tests.scalability import (
     GLOB_NOMATCH_SUFFIX,
     GREP_MATCH_LINE,
     GREP_NOMATCH_LINE,
-    INTEGRATION_FILES_PER_DIR,
     INTEGRATION_FLAT_FILES,
     INTEGRATION_NESTED_DIRS,
-    INTEGRATION_NESTED_TOTAL,
 )
 
 @pytest.mark.integration
@@ -35,13 +33,13 @@ class TestS3BackendIntegration:
         edit_res = await s3_backend.aedit("hello.txt", "World", "Integration")
         assert edit_res.error is None
         assert edit_res.occurrences == 1
-        
+
         read_res_2 = await s3_backend.aread("hello.txt")
         assert "Hello Integration" in read_res_2
 
     async def test_grep(self, s3_backend):
         await s3_backend.awrite("grep_me.txt", "match this pattern\ndon't match this")
-        
+
         matches = await s3_backend.agrep_raw("pattern")
         assert len(matches) == 1
         assert matches[0]["text"] == "match this pattern"

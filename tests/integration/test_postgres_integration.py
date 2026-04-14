@@ -1,4 +1,3 @@
-import asyncio
 
 import pytest
 
@@ -7,10 +6,8 @@ from tests.scalability import (
     GLOB_NOMATCH_SUFFIX,
     GREP_MATCH_LINE,
     GREP_NOMATCH_LINE,
-    INTEGRATION_FILES_PER_DIR,
     INTEGRATION_FLAT_FILES,
     INTEGRATION_NESTED_DIRS,
-    INTEGRATION_NESTED_TOTAL,
 )
 
 @pytest.mark.integration
@@ -33,13 +30,13 @@ class TestPostgresBackendIntegration:
         # 4. Edit
         edit_res = await postgres_backend.aedit("pg_hello.txt", "Postgres", "SQL")
         assert edit_res.error is None
-        
+
         read_res_2 = await postgres_backend.aread("pg_hello.txt")
         assert "Hello SQL" in read_res_2
 
     async def test_grep(self, postgres_backend):
         await postgres_backend.awrite("pg_grep.txt", "match this pattern\ndon't match this")
-        
+
         matches = await postgres_backend.agrep_raw("pattern")
         assert len(matches) == 1
         assert matches[0]["text"] == "match this pattern"
