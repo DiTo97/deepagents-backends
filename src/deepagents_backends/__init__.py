@@ -976,7 +976,6 @@ class PostgresBackend(BackendProtocol):
 
         results.sort(key=lambda x: x.get("path", ""))
         return results
-        return results
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Sync wrapper for aupload_files."""
