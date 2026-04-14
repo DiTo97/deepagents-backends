@@ -249,40 +249,44 @@ class S3Backend(BackendProtocol):
         return run_async_safely(self.als_info(path))
 
     async def als_info(self, path: str) -> list[FileInfo]:
-        """List files in a directory."""
+        """List direct children of a directory.
+
+        Uses the S3 ``Delimiter='/'`` parameter so that:
+
+        * ``Contents`` returns only objects *directly* under the prefix
+          (no recursive descent into sub-prefixes).
+        * ``CommonPrefixes`` returns the virtual sub-directory entries.
+
+        This avoids scanning the full subtree just to derive immediate
+        children.
+        """
         prefix = path.lstrip("/")
         if prefix and not prefix.endswith("/"):
             prefix += "/"
 
-        objects = await self._list_keys(prefix)
+        full_prefix = self._s3_key(prefix)
         results: list[FileInfo] = []
-        seen_dirs: set[str] = set()
 
-        for obj in objects:
-            key = obj["Key"]
-            vpath = self._virtual_path(key)
-
-            # Check if this is a direct child or nested
-            rel = vpath[len("/" + prefix) :] if prefix else vpath[1:]
-            if "/" in rel:
-                # This is in a subdirectory, add the directory entry
-                dir_name = rel.split("/")[0]
-                dir_path = "/" + prefix + dir_name + "/"
-                if dir_path not in seen_dirs:
-                    seen_dirs.add(dir_path)
-                    results.append({"path": dir_path, "is_dir": True})
-            else:
-                # Direct file
-                results.append(
-                    {
-                        "path": vpath,
-                        "is_dir": False,
-                        "size": obj.get("Size", 0),
-                        "modified_at": obj["LastModified"].isoformat()
-                        if "LastModified" in obj
-                        else None,
-                    }
-                )
+        async with self._client() as client:
+            paginator = client.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(
+                Bucket=self._bucket, Prefix=full_prefix, Delimiter="/"
+            ):
+                for obj in page.get("Contents", []):
+                    vpath = self._virtual_path(obj["Key"])
+                    results.append(
+                        {
+                            "path": vpath,
+                            "is_dir": False,
+                            "size": obj.get("Size", 0),
+                            "modified_at": obj["LastModified"].isoformat()
+                            if "LastModified" in obj
+                            else None,
+                        }
+                    )
+                for cp in page.get("CommonPrefixes", []):
+                    vpath = self._virtual_path(cp["Prefix"])
+                    results.append({"path": vpath, "is_dir": True})
 
         results.sort(key=lambda x: x.get("path", ""))
         return results
