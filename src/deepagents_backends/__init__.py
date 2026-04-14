@@ -448,9 +448,26 @@ class S3Backend(BackendProtocol):
         )
 
     async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
-        """Find files matching a glob pattern."""
-        search_prefix = path.lstrip("/")
-        objects = await self._list_keys(search_prefix)
+        """Find files matching a glob pattern.
+
+        Extracts the longest literal prefix from *pattern* (the part before
+        the first wildcard character) and combines it with *path* to narrow
+        the S3 key scan before applying fnmatch.  This avoids listing the
+        full keyspace for patterns like ``"models/v2*.json"`` or ``"src/**"``.
+        """
+        base_prefix = path.lstrip("/")
+        if base_prefix and not base_prefix.endswith("/"):
+            base_prefix += "/"
+
+        # Longest wildcard-free prefix of the pattern.
+        literal: str = ""
+        for c in pattern:
+            if c in "*?[{":
+                break
+            literal += c
+
+        effective_prefix = base_prefix + literal
+        objects = await self._list_keys(effective_prefix)
         results: list[FileInfo] = []
 
         for obj in objects:
