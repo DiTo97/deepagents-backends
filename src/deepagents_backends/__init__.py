@@ -682,9 +682,9 @@ class PostgresBackend(BackendProtocol):
             async with conn.cursor() as cur:
                 await cur.execute(
                     f"""
-                    SELECT path, modified_at, 
+                    SELECT path, modified_at,
                            COALESCE(jsonb_array_length(content->'content'), 0) as line_count
-                    FROM {self._table} 
+                    FROM {self._table}
                     WHERE path LIKE %s
                     ORDER BY path
                     """,
