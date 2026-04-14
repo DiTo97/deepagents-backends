@@ -676,27 +676,6 @@ class PostgresBackend(BackendProtocol):
                 )
                 return await cur.fetchone() is not None
 
-    async def _list_paths(self, prefix: str = "/") -> list[tuple[str, datetime, int]]:
-        """List all paths with a prefix, returning (virtual_path, modified_at, size)."""
-        pool = await self._ensure_pool()
-        # Convert virtual prefix to storage prefix
-        storage_prefix = self._storage_path(prefix)
-        like_pattern = storage_prefix + "%" if storage_prefix else "%"
-        async with pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT path, modified_at, 
-                           COALESCE(jsonb_array_length(content->'content'), 0) as line_count
-                    FROM {self._table} 
-                    WHERE path LIKE %s
-                    ORDER BY path
-                    """,
-                    (like_pattern,),
-                )
-                # Return virtual paths
-                return [(self._virtual_path(row[0]), row[1], row[2]) for row in await cur.fetchall()]
-
     # -------------------------------------------------------------------------
     # BackendProtocol Implementation
     # -------------------------------------------------------------------------
@@ -933,17 +912,62 @@ class PostgresBackend(BackendProtocol):
         )
 
     async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
-        """Find files matching a glob pattern."""
-        rows = await self._list_paths(path)
+        """Find files matching a glob pattern.
+
+        Narrows the SQL candidate set using the literal suffix of *pattern*
+        (e.g. ``"*.py"`` → ``AND path LIKE '%.py'``) before applying
+        ``fnmatch`` in Python, avoiding large unrelated result sets.
+        """
+        storage_prefix = self._storage_path(path)
+        like_prefix = storage_prefix + "%" if storage_prefix else "%"
+
+        # Extract a literal suffix from the pattern for SQL pre-filtering.
+        # Only handles the common case: a single leading "*" followed by a
+        # wildcard-free string (e.g. "*.py", "*.txt").  Complex patterns
+        # (brace expansion, embedded wildcards) fall back to prefix-only SQL.
+        stripped = pattern.lstrip("*")
+        like_suffix: str | None = None
+        if stripped and not any(c in stripped for c in "?[{*"):
+            like_suffix = f"%{stripped}"
+
+        pool = await self._ensure_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                if like_suffix:
+                    await cur.execute(
+                        f"""
+                        SELECT path, modified_at,
+                               COALESCE(jsonb_array_length(content->'content'), 0)
+                        FROM {self._table}
+                        WHERE path LIKE %s AND path LIKE %s
+                        ORDER BY path
+                        """,
+                        (like_prefix, like_suffix),
+                    )
+                else:
+                    await cur.execute(
+                        f"""
+                        SELECT path, modified_at,
+                               COALESCE(jsonb_array_length(content->'content'), 0)
+                        FROM {self._table}
+                        WHERE path LIKE %s
+                        ORDER BY path
+                        """,
+                        (like_prefix,),
+                    )
+                rows = await cur.fetchall()
+
         results: list[FileInfo] = []
+        for storage_path, modified_at, line_count in rows:
+            virtual_path = self._virtual_path(storage_path)
+            rel_path = (
+                virtual_path[len(path) :].lstrip("/") if path != "/" else virtual_path[1:]
+            )
 
-        for file_path, modified_at, line_count in rows:
-            rel_path = file_path[len(path) :].lstrip("/") if path != "/" else file_path[1:]
-
-            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(file_path, pattern):
+            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(virtual_path, pattern):
                 results.append(
                     {
-                        "path": file_path,
+                        "path": virtual_path,
                         "is_dir": False,
                         "size": line_count,
                         "modified_at": modified_at.isoformat() if modified_at else None,
@@ -951,6 +975,7 @@ class PostgresBackend(BackendProtocol):
                 )
 
         results.sort(key=lambda x: x.get("path", ""))
+        return results
         return results
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
