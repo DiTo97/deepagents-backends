@@ -203,25 +203,16 @@ class TestPostgresBackendScalability:
         matching_paths, all_paths = grep_dataset
         _, _, mock_cur = mock_pool
 
-        # _list_paths uses fetchall; _get_file_data uses fetchone.
-        mock_cur.fetchall.return_value = self._make_list_rows(all_paths)
+        matching_virtual = set(matching_paths)
 
-        matching_storage = {p.lstrip("/") for p in matching_paths}
-        last_params: list = [None]
-
-        async def tracked_execute(query, params=None):
-            last_params[0] = params
-
-        mock_cur.execute = AsyncMock(side_effect=tracked_execute)
-
-        def fetchone_by_path():
-            params = last_params[0]
-            storage_path = params[0] if params else None
-            if storage_path in matching_storage:
-                return [json.dumps({"content": [GREP_MATCH_LINE]}), None, None]
-            return [json.dumps({"content": [GREP_NOMATCH_LINE]}), None, None]
-
-        mock_cur.fetchone.side_effect = fetchone_by_path
+        # New agrep_raw: single fetchall returning (storage_path, content_list) rows.
+        mock_cur.fetchall.return_value = [
+            (
+                p.lstrip("/"),
+                [GREP_MATCH_LINE] if p in matching_virtual else [GREP_NOMATCH_LINE],
+            )
+            for p in all_paths
+        ]
 
         results = await backend.agrep_raw(GREP_MATCH_LINE, "/large_grep")
 

@@ -876,28 +876,53 @@ class PostgresBackend(BackendProtocol):
     async def agrep_raw(
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> list[GrepMatch] | str:
-        """Search for pattern in files using PostgreSQL."""
+        """Search for pattern in files using PostgreSQL.
+
+        Fetches all candidate paths and their content in a single SQL query,
+        eliminating the previous per-file ``_get_file_data`` loop.
+        Glob and regex filtering are applied in Python after the batch fetch.
+        """
         try:
             regex = re.compile(pattern)
         except re.error as e:
             return f"Invalid regex pattern: {e}"
 
         search_prefix = path or "/"
-        rows = await self._list_paths(search_prefix)
-        matches: list[GrepMatch] = []
+        storage_prefix = self._storage_path(search_prefix)
+        like_pattern = storage_prefix + "%" if storage_prefix else "%"
 
-        for file_path, _, _ in rows:
-            filename = PurePosixPath(file_path).name
+        pool = await self._ensure_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""
+                    SELECT path, content->'content'
+                    FROM {self._table}
+                    WHERE path LIKE %s
+                    ORDER BY path
+                    """,
+                    (like_pattern,),
+                )
+                rows = await cur.fetchall()
+
+        matches: list[GrepMatch] = []
+        for storage_path, content_arr in rows:
+            virtual_path = self._virtual_path(storage_path)
+            filename = PurePosixPath(virtual_path).name
+
             if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
                 continue
 
-            data = await self._get_file_data(file_path)
-            if data is None:
-                continue
+            if isinstance(content_arr, list):
+                lines = content_arr
+            elif isinstance(content_arr, str):
+                lines = json.loads(content_arr)
+            else:
+                lines = []
 
-            for line_num, line in enumerate(data.get("content", []), 1):
+            for line_num, line in enumerate(lines, 1):
                 if regex.search(line):
-                    matches.append({"path": file_path, "line": line_num, "text": line})
+                    matches.append({"path": virtual_path, "line": line_num, "text": line})
 
         return matches
 
