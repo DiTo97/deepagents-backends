@@ -702,31 +702,75 @@ class PostgresBackend(BackendProtocol):
         return run_async_safely(self.als_info(path))
 
     async def als_info(self, path: str) -> list[FileInfo]:
-        """List files in a directory."""
+        """List direct children of a directory.
+
+        Uses two SQL queries instead of loading the full descendant set:
+
+        1. A direct-file query that excludes any path containing an extra
+           ``/`` after the prefix (``NOT LIKE prefix + '%/%'``).
+        2. A distinct-subdirectory query that extracts the first path segment
+           of nested descendants via ``SPLIT_PART`` / ``SUBSTR``.
+
+        This avoids materialising the whole subtree just to derive immediate
+        children.
+        """
         prefix = path if path.endswith("/") or path == "/" else path + "/"
-        rows = await self._list_paths(prefix)
+        storage_prefix = self._storage_path(prefix)
+
+        # LIKE patterns.  When storage_prefix is empty (root listing) we use
+        # bare wildcards so we don't accidentally prepend a literal "%".
+        like_all = (storage_prefix + "%") if storage_prefix else "%"
+        like_nested = (storage_prefix + "%/%") if storage_prefix else "%/%"
+
+        # SUBSTR start position (1-based): skip past storage_prefix so that
+        # SPLIT_PART returns only the first path segment *after* the prefix.
+        substr_start = len(storage_prefix) + 1
+
+        pool = await self._ensure_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                # ── Direct file children ──────────────────────────────────
+                await cur.execute(
+                    f"""
+                    SELECT path, modified_at,
+                           COALESCE(jsonb_array_length(content->'content'), 0)
+                    FROM {self._table}
+                    WHERE path LIKE %s AND path NOT LIKE %s
+                    ORDER BY path
+                    """,
+                    (like_all, like_nested),
+                )
+                file_rows = await cur.fetchall()
+
+                # ── Direct subdirectory names ─────────────────────────────
+                await cur.execute(
+                    f"""
+                    SELECT DISTINCT SPLIT_PART(SUBSTR(path, %s), '/', 1)
+                    FROM {self._table}
+                    WHERE path LIKE %s
+                    ORDER BY 1
+                    """,
+                    (substr_start, like_nested),
+                )
+                dir_rows = await cur.fetchall()
 
         results: list[FileInfo] = []
-        seen_dirs: set[str] = set()
-
-        for file_path, modified_at, line_count in rows:
-            rel = file_path[len(prefix) :] if prefix != "/" else file_path[1:]
-
-            if "/" in rel:
-                dir_name = rel.split("/")[0]
-                dir_path = prefix + dir_name + "/"
-                if dir_path not in seen_dirs:
-                    seen_dirs.add(dir_path)
-                    results.append({"path": dir_path, "is_dir": True})
-            else:
-                results.append(
-                    {
-                        "path": file_path,
-                        "is_dir": False,
-                        "size": line_count,
-                        "modified_at": modified_at.isoformat() if modified_at else None,
-                    }
-                )
+        for row in file_rows:
+            results.append(
+                {
+                    "path": self._virtual_path(row[0]),
+                    "is_dir": False,
+                    "size": row[2],
+                    "modified_at": row[1].isoformat() if row[1] else None,
+                }
+            )
+        for (dir_name,) in dir_rows:
+            results.append(
+                {
+                    "path": self._virtual_path(storage_prefix + dir_name + "/"),
+                    "is_dir": True,
+                }
+            )
 
         results.sort(key=lambda x: x.get("path", ""))
         return results
