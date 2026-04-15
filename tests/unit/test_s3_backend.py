@@ -140,6 +140,72 @@ class TestS3BackendUnit:
         finally:
             coroutine.close()
 
+    async def test_aupload_files_success(self, backend, mock_s3_client):
+        responses = await backend.aupload_files([("data/config.json", b"{}")])
+
+        assert len(responses) == 1
+        assert responses[0].path == "data/config.json"
+        assert responses[0].error is None
+        mock_s3_client.put_object.assert_called_once_with(
+            Bucket="unit-test-bucket",
+            Key="unit-test/data/config.json",
+            Body=b"{}",
+        )
+
+    async def test_aupload_files_permission_denied(self, backend, mock_s3_client):
+        error_response = {"Error": {"Code": "AccessDenied", "Message": "Denied"}}
+        mock_s3_client.put_object.side_effect = ClientError(error_response, "PutObject")
+
+        responses = await backend.aupload_files([("secret.txt", b"nope")])
+
+        assert len(responses) == 1
+        assert responses[0].path == "secret.txt"
+        assert responses[0].error == "permission_denied"
+
+    async def test_aupload_files_invalid_path_on_unexpected_error(self, backend, mock_s3_client):
+        mock_s3_client.put_object.side_effect = RuntimeError("boom")
+
+        responses = await backend.aupload_files([("broken.txt", b"oops")])
+
+        assert len(responses) == 1
+        assert responses[0].path == "broken.txt"
+        assert responses[0].error == "invalid_path"
+
+    async def test_adownload_files_success(self, backend, mock_s3_client):
+        mock_body = AsyncMock()
+        mock_body.read.return_value = b"payload"
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        responses = await backend.adownload_files(["data/config.json"])
+
+        assert len(responses) == 1
+        assert responses[0].path == "data/config.json"
+        assert responses[0].content == b"payload"
+        assert responses[0].error is None
+
+    async def test_adownload_files_file_not_found(self, backend, mock_s3_client):
+        error_response = {"Error": {"Code": "NoSuchKey", "Message": "Not Found"}}
+        mock_s3_client.get_object.side_effect = ClientError(error_response, "GetObject")
+
+        responses = await backend.adownload_files(["missing.txt"])
+
+        assert len(responses) == 1
+        assert responses[0].path == "missing.txt"
+        assert responses[0].content is None
+        assert responses[0].error == "file_not_found"
+
+    async def test_adownload_files_permission_denied(self, backend, mock_s3_client):
+        error_response = {"Error": {"Code": "AccessDenied", "Message": "Denied"}}
+        mock_s3_client.get_object.side_effect = ClientError(error_response, "GetObject")
+
+        responses = await backend.adownload_files(["secret.txt"])
+
+        assert len(responses) == 1
+        assert responses[0].path == "secret.txt"
+        assert responses[0].content is None
+        assert responses[0].error == "permission_denied"
+
 
 @pytest.mark.unit
 class TestS3BackendScalability:
