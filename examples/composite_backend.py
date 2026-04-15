@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "deepagents==0.3.1",
-#     "langchain-anthropic==1.3.1",
-#     "anthropic==0.75.0",
+#     "deepagents==0.5.2",
+#     "langchain-anthropic==1.4.0",
+#     "anthropic==0.95.0",
 #     "deepagents-backends",
 # ]
 # ///
@@ -114,7 +114,7 @@ async def composite_backend():
 
         def backend_factory(runtime):
             return CompositeBackend(
-                default=StateBackend(runtime),
+                default=StateBackend(),
                 routes={
                     "/assets/": s3_backend,
                     "/data/": pg_backend,

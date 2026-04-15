@@ -448,7 +448,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aioboto3", specifier = ">=15.5.0" },
-    { name = "deepagents", specifier = ">=0.3.1" },
+    { name = "deepagents", specifier = ">=0.5.2" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.2" },
     { name = "wcmatch", specifier = ">=10.1" },
 ]
