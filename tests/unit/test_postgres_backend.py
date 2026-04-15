@@ -2,6 +2,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import deepagents_backends
 from deepagents_backends import PostgresBackend
 from tests.scalability import (
     GLOB_MATCH_SUFFIX,
@@ -108,6 +109,35 @@ class TestPostgresBackendUnit:
         assert "/dir/" in paths
         assert not any(r["is_dir"] for r in results if r["path"] == "/file1.txt")
         assert any(r["is_dir"] for r in results if r["path"] == "/dir/")
+
+    @pytest.mark.parametrize(
+        ("method_name", "args", "expected_coroutine_name"),
+        [
+            ("read", ("test.txt",), "aread"),
+            ("write", ("new.txt", "content"), "awrite"),
+            ("edit", ("test.txt", "old", "new"), "aedit"),
+            ("ls_info", ("/",), "als_info"),
+            ("grep_raw", ("pattern",), "agrep_raw"),
+            ("glob_info", ("*.py",), "aglob_info"),
+            ("upload_files", ([("file.txt", b"data")],), "aupload_files"),
+            ("download_files", (["file.txt"],), "adownload_files"),
+        ],
+    )
+    def test_sync_wrappers_delegate_to_run_async_safely(
+        self, backend, method_name, args, expected_coroutine_name
+    ):
+        sentinel = object()
+
+        with patch.object(deepagents_backends, "run_async_safely", return_value=sentinel) as mock_run:
+            result = getattr(backend, method_name)(*args)
+
+        assert result is sentinel
+
+        coroutine = mock_run.call_args.args[0]
+        try:
+            assert coroutine.cr_code.co_name == expected_coroutine_name
+        finally:
+            coroutine.close()
 
 
 @pytest.mark.unit
