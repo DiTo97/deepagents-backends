@@ -93,6 +93,22 @@ class TestPostgresBackendUnit:
         assert result.error is not None
         assert "already exists" in result.error
 
+    async def test_als_info_mixed(self, backend, mock_pool):
+        """als_info correctly reports direct files and collapses nested paths."""
+        _, _, mock_cur = mock_pool
+        # als_info now issues two queries: direct-files fetchall, then dirs fetchall
+        mock_cur.fetchall.side_effect = [
+            [("file1.txt", None, 2)],  # direct files under root
+            [("dir",)],                # distinct first segment of nested paths
+        ]
+
+        results = await backend.als_info("/")
+        paths = {r["path"] for r in results}
+        assert "/file1.txt" in paths
+        assert "/dir/" in paths
+        assert not any(r["is_dir"] for r in results if r["path"] == "/file1.txt")
+        assert any(r["is_dir"] for r in results if r["path"] == "/dir/")
+
 
 @pytest.mark.unit
 class TestPostgresBackendScalability:
@@ -145,7 +161,11 @@ class TestPostgresBackendScalability:
     ):
         """Invariant 1a: all direct-child files reported, no extras."""
         _, _, mock_cur = mock_pool
-        mock_cur.fetchall.return_value = self._make_list_rows(large_flat_paths)
+        # New SQL-based als_info issues two fetchall calls:
+        #   1st: direct file rows (paths not nested further)
+        #   2nd: distinct dir-name rows (empty here — no subdirs)
+        file_rows = [(p.lstrip("/"), None, 1) for p in large_flat_paths]
+        mock_cur.fetchall.side_effect = [file_rows, []]
 
         results = await backend.als_info("/large_flat")
 
@@ -161,7 +181,10 @@ class TestPostgresBackendScalability:
     ):
         """Invariant 1b: nested files collapse to their parent directory entries."""
         _, _, mock_cur = mock_pool
-        mock_cur.fetchall.return_value = self._make_list_rows(large_nested_paths)
+        # 1st fetchall: no direct files under /large_nested/
+        # 2nd fetchall: DISTINCT first segment → 10 unique dir names
+        dir_name_rows = [(f"dir_{d:03d}",) for d in range(LARGE_NESTED_DIRS)]
+        mock_cur.fetchall.side_effect = [[], dir_name_rows]
 
         results = await backend.als_info("/large_nested")
 
@@ -180,25 +203,16 @@ class TestPostgresBackendScalability:
         matching_paths, all_paths = grep_dataset
         _, _, mock_cur = mock_pool
 
-        # _list_paths uses fetchall; _get_file_data uses fetchone.
-        mock_cur.fetchall.return_value = self._make_list_rows(all_paths)
+        matching_virtual = set(matching_paths)
 
-        matching_storage = {p.lstrip("/") for p in matching_paths}
-        last_params: list = [None]
-
-        async def tracked_execute(query, params=None):
-            last_params[0] = params
-
-        mock_cur.execute = AsyncMock(side_effect=tracked_execute)
-
-        def fetchone_by_path():
-            params = last_params[0]
-            storage_path = params[0] if params else None
-            if storage_path in matching_storage:
-                return [json.dumps({"content": [GREP_MATCH_LINE]}), None, None]
-            return [json.dumps({"content": [GREP_NOMATCH_LINE]}), None, None]
-
-        mock_cur.fetchone.side_effect = fetchone_by_path
+        # New agrep_raw: single fetchall returning (storage_path, content_list) rows.
+        mock_cur.fetchall.return_value = [
+            (
+                p.lstrip("/"),
+                [GREP_MATCH_LINE] if p in matching_virtual else [GREP_NOMATCH_LINE],
+            )
+            for p in all_paths
+        ]
 
         results = await backend.agrep_raw(GREP_MATCH_LINE, "/large_grep")
 

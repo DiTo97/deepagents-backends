@@ -81,31 +81,34 @@ class TestS3BackendUnit:
         paginator = MagicMock()
         mock_s3_client.get_paginator.return_value = paginator
 
-        # Mock pagination
+        lm = MagicMock()
+        lm.isoformat.return_value = "2023-01-01T00:00:00Z"
+        # With Delimiter="/", direct files land in Contents and virtual
+        # sub-directories land in CommonPrefixes — no nested file objects.
         page1 = {
             "Contents": [
-                {"Key": "unit-test/file1.txt", "Size": 100, "LastModified": MagicMock()},
-                {"Key": "unit-test/dir/file2.txt", "Size": 200, "LastModified": MagicMock()},
-            ]
+                {"Key": "unit-test/file1.txt", "Size": 100, "LastModified": lm},
+            ],
+            "CommonPrefixes": [
+                {"Prefix": "unit-test/dir/"},
+            ],
         }
 
-        # Setup async iterator for paginator
         async def async_pages(*args, **kwargs):
             yield page1
 
         paginator.paginate.return_value = async_pages()
 
-        # Mock datetime.isoformat for LastModified
-        page1["Contents"][0]["LastModified"].isoformat.return_value = "2023-01-01T00:00:00Z"
-        page1["Contents"][1]["LastModified"].isoformat.return_value = "2023-01-01T00:00:00Z"
-
         results = await backend.als_info("/")
 
         assert len(results) == 2
-        # Should see file1.txt and dir/
         paths = {r["path"] for r in results}
         assert "/file1.txt" in paths
         assert "/dir/" in paths
+        # Verify delimiter was passed
+        paginator.paginate.assert_called_once()
+        call_kwargs = paginator.paginate.call_args.kwargs
+        assert call_kwargs.get("Delimiter") == "/"
 
 
 @pytest.mark.unit
@@ -139,13 +142,28 @@ class TestS3BackendScalability:
         lm.isoformat.return_value = "2024-01-01T00:00:00+00:00"
         return {"Key": key, "Size": 10, "LastModified": lm}
 
-    def _setup_paginator(self, mock_s3_client, virtual_paths: list[str]) -> None:
+    def _setup_paginator(
+        self,
+        mock_s3_client,
+        direct_file_paths: list[str],
+        subdir_prefixes: list[str] | None = None,
+    ) -> None:
+        """Set up paginator to return delimiter-aware pages.
+
+        *direct_file_paths* are virtual paths of direct file children
+        (returned in ``Contents``).  *subdir_prefixes* are virtual paths
+        of direct subdirectory entries, e.g. ``["/root/dir_000/"]``
+        (returned in ``CommonPrefixes``).
+        """
         paginator = MagicMock()
         mock_s3_client.get_paginator.return_value = paginator
-        objects = [self._make_s3_object(p) for p in virtual_paths]
+        objects = [self._make_s3_object(p) for p in direct_file_paths]
+        common_prefixes = [
+            {"Prefix": f"{self._PREFIX}{p}"} for p in (subdir_prefixes or [])
+        ]
 
         async def async_pages(*args, **kwargs):
-            yield {"Contents": objects}
+            yield {"Contents": objects, "CommonPrefixes": common_prefixes}
 
         paginator.paginate.return_value = async_pages()
 
@@ -163,22 +181,27 @@ class TestS3BackendScalability:
         self, backend, mock_s3_client, large_flat_paths
     ):
         """Invariant 1a: all direct-child files reported, no extras."""
-        self._setup_paginator(mock_s3_client, large_flat_paths)
+        # With Delimiter="/", S3 returns flat files in Contents only.
+        self._setup_paginator(mock_s3_client, large_flat_paths, subdir_prefixes=[])
         results = await backend.als_info("/large_flat")
 
         assert len(results) == LARGE_FLAT_FILES
         assert all(not r["is_dir"] for r in results)
         assert all(r["path"].startswith("/large_flat/") for r in results)
-        # No nested paths sneak through
         assert all("/" not in r["path"].removeprefix("/large_flat/") for r in results)
 
     # ── als_info: nested tree ─────────────────────────────────────────────────
 
     async def test_als_info_returns_only_directory_entries_from_large_nested_tree(
-        self, backend, mock_s3_client, large_nested_paths
+        self, backend, mock_s3_client
     ):
-        """Invariant 1b: nested files collapse to their parent directory entries."""
-        self._setup_paginator(mock_s3_client, large_nested_paths)
+        """Invariant 1b: with Delimiter='/', nested files appear only via CommonPrefixes."""
+        # With Delimiter="/", S3 returns no Contents (all files are nested)
+        # and 10 CommonPrefixes entries.
+        subdir_prefixes = [
+            f"/large_nested/dir_{d:03d}/" for d in range(LARGE_NESTED_DIRS)
+        ]
+        self._setup_paginator(mock_s3_client, [], subdir_prefixes=subdir_prefixes)
         results = await backend.als_info("/large_nested")
 
         assert len(results) == LARGE_NESTED_DIRS

@@ -249,40 +249,44 @@ class S3Backend(BackendProtocol):
         return run_async_safely(self.als_info(path))
 
     async def als_info(self, path: str) -> list[FileInfo]:
-        """List files in a directory."""
+        """List direct children of a directory.
+
+        Uses the S3 ``Delimiter='/'`` parameter so that:
+
+        * ``Contents`` returns only objects *directly* under the prefix
+          (no recursive descent into sub-prefixes).
+        * ``CommonPrefixes`` returns the virtual sub-directory entries.
+
+        This avoids scanning the full subtree just to derive immediate
+        children.
+        """
         prefix = path.lstrip("/")
         if prefix and not prefix.endswith("/"):
             prefix += "/"
 
-        objects = await self._list_keys(prefix)
+        full_prefix = self._s3_key(prefix)
         results: list[FileInfo] = []
-        seen_dirs: set[str] = set()
 
-        for obj in objects:
-            key = obj["Key"]
-            vpath = self._virtual_path(key)
-
-            # Check if this is a direct child or nested
-            rel = vpath[len("/" + prefix) :] if prefix else vpath[1:]
-            if "/" in rel:
-                # This is in a subdirectory, add the directory entry
-                dir_name = rel.split("/")[0]
-                dir_path = "/" + prefix + dir_name + "/"
-                if dir_path not in seen_dirs:
-                    seen_dirs.add(dir_path)
-                    results.append({"path": dir_path, "is_dir": True})
-            else:
-                # Direct file
-                results.append(
-                    {
-                        "path": vpath,
-                        "is_dir": False,
-                        "size": obj.get("Size", 0),
-                        "modified_at": obj["LastModified"].isoformat()
-                        if "LastModified" in obj
-                        else None,
-                    }
-                )
+        async with self._client() as client:
+            paginator = client.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(
+                Bucket=self._bucket, Prefix=full_prefix, Delimiter="/"
+            ):
+                for obj in page.get("Contents", []):
+                    vpath = self._virtual_path(obj["Key"])
+                    results.append(
+                        {
+                            "path": vpath,
+                            "is_dir": False,
+                            "size": obj.get("Size", 0),
+                            "modified_at": obj["LastModified"].isoformat()
+                            if "LastModified" in obj
+                            else None,
+                        }
+                    )
+                for cp in page.get("CommonPrefixes", []):
+                    vpath = self._virtual_path(cp["Prefix"])
+                    results.append({"path": vpath, "is_dir": True})
 
         results.sort(key=lambda x: x.get("path", ""))
         return results
@@ -389,30 +393,51 @@ class S3Backend(BackendProtocol):
     async def agrep_raw(
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> list[GrepMatch] | str:
-        """Search for pattern in files."""
+        """Search for pattern in files.
+
+        Applies filename (glob) filtering immediately after listing — before
+        any object GET — and reuses a single S3 client session for both the
+        listing and all subsequent content fetches, eliminating N separate
+        session setups.
+        """
         try:
             regex = re.compile(pattern)
         except re.error as e:
             return f"Invalid regex pattern: {e}"
 
         search_prefix = (path or "/").lstrip("/")
-        objects = await self._list_keys(search_prefix)
+        full_prefix = self._s3_key(search_prefix)
         matches: list[GrepMatch] = []
 
-        for obj in objects:
-            vpath = self._virtual_path(obj["Key"])
-            filename = PurePosixPath(vpath).name
+        async with self._client() as client:
+            # ── Step 1: list candidate objects ───────────────────────────
+            paginator = client.get_paginator("list_objects_v2")
+            candidates: list[tuple[str, str]] = []  # (s3_key, virtual_path)
+            async for page in paginator.paginate(
+                Bucket=self._bucket, Prefix=full_prefix
+            ):
+                for obj in page.get("Contents", []):
+                    vpath = self._virtual_path(obj["Key"])
+                    filename = PurePosixPath(vpath).name
+                    if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
+                        continue
+                    candidates.append((obj["Key"], vpath))
 
-            if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
-                continue
+            # ── Step 2: fetch content — shared session, no per-file setup ─
+            for key, vpath in candidates:
+                try:
+                    response = await client.get_object(Bucket=self._bucket, Key=key)
+                    async with response["Body"] as stream:
+                        raw = await stream.read()
+                    data = json.loads(raw.decode("utf-8"))
+                except ClientError as e:
+                    if e.response["Error"]["Code"] == "NoSuchKey":
+                        continue
+                    raise
 
-            data = await self._get_file_data(vpath)
-            if data is None:
-                continue
-
-            for line_num, line in enumerate(data.get("content", []), 1):
-                if regex.search(line):
-                    matches.append({"path": vpath, "line": line_num, "text": line})
+                for line_num, line in enumerate(data.get("content", []), 1):
+                    if regex.search(line):
+                        matches.append({"path": vpath, "line": line_num, "text": line})
 
         return matches
 
@@ -423,9 +448,26 @@ class S3Backend(BackendProtocol):
         )
 
     async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
-        """Find files matching a glob pattern."""
-        search_prefix = path.lstrip("/")
-        objects = await self._list_keys(search_prefix)
+        """Find files matching a glob pattern.
+
+        Extracts the longest literal prefix from *pattern* (the part before
+        the first wildcard character) and combines it with *path* to narrow
+        the S3 key scan before applying fnmatch.  This avoids listing the
+        full keyspace for patterns like ``"models/v2*.json"`` or ``"src/**"``.
+        """
+        base_prefix = path.lstrip("/")
+        if base_prefix and not base_prefix.endswith("/"):
+            base_prefix += "/"
+
+        # Longest wildcard-free prefix of the pattern.
+        literal: str = ""
+        for c in pattern:
+            if c in "*?[{":
+                break
+            literal += c
+
+        effective_prefix = base_prefix + literal
+        objects = await self._list_keys(effective_prefix)
         results: list[FileInfo] = []
 
         for obj in objects:
@@ -672,27 +714,6 @@ class PostgresBackend(BackendProtocol):
                 )
                 return await cur.fetchone() is not None
 
-    async def _list_paths(self, prefix: str = "/") -> list[tuple[str, datetime, int]]:
-        """List all paths with a prefix, returning (virtual_path, modified_at, size)."""
-        pool = await self._ensure_pool()
-        # Convert virtual prefix to storage prefix
-        storage_prefix = self._storage_path(prefix)
-        like_pattern = storage_prefix + "%" if storage_prefix else "%"
-        async with pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT path, modified_at,
-                           COALESCE(jsonb_array_length(content->'content'), 0) as line_count
-                    FROM {self._table}
-                    WHERE path LIKE %s
-                    ORDER BY path
-                    """,
-                    (like_pattern,),
-                )
-                # Return virtual paths
-                return [(self._virtual_path(row[0]), row[1], row[2]) for row in await cur.fetchall()]
-
     # -------------------------------------------------------------------------
     # BackendProtocol Implementation
     # -------------------------------------------------------------------------
@@ -702,31 +723,75 @@ class PostgresBackend(BackendProtocol):
         return run_async_safely(self.als_info(path))
 
     async def als_info(self, path: str) -> list[FileInfo]:
-        """List files in a directory."""
+        """List direct children of a directory.
+
+        Uses two SQL queries instead of loading the full descendant set:
+
+        1. A direct-file query that excludes any path containing an extra
+           ``/`` after the prefix (``NOT LIKE prefix + '%/%'``).
+        2. A distinct-subdirectory query that extracts the first path segment
+           of nested descendants via ``SPLIT_PART`` / ``SUBSTR``.
+
+        This avoids materialising the whole subtree just to derive immediate
+        children.
+        """
         prefix = path if path.endswith("/") or path == "/" else path + "/"
-        rows = await self._list_paths(prefix)
+        storage_prefix = self._storage_path(prefix)
+
+        # LIKE patterns.  When storage_prefix is empty (root listing) we use
+        # bare wildcards so we don't accidentally prepend a literal "%".
+        like_all = (storage_prefix + "%") if storage_prefix else "%"
+        like_nested = (storage_prefix + "%/%") if storage_prefix else "%/%"
+
+        # SUBSTR start position (1-based): skip past storage_prefix so that
+        # SPLIT_PART returns only the first path segment *after* the prefix.
+        substr_start = len(storage_prefix) + 1
+
+        pool = await self._ensure_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                # ── Direct file children ──────────────────────────────────
+                await cur.execute(
+                    f"""
+                    SELECT path, modified_at,
+                           COALESCE(jsonb_array_length(content->'content'), 0)
+                    FROM {self._table}
+                    WHERE path LIKE %s AND path NOT LIKE %s
+                    ORDER BY path
+                    """,
+                    (like_all, like_nested),
+                )
+                file_rows = await cur.fetchall()
+
+                # ── Direct subdirectory names ─────────────────────────────
+                await cur.execute(
+                    f"""
+                    SELECT DISTINCT SPLIT_PART(SUBSTR(path, %s), '/', 1)
+                    FROM {self._table}
+                    WHERE path LIKE %s
+                    ORDER BY 1
+                    """,
+                    (substr_start, like_nested),
+                )
+                dir_rows = await cur.fetchall()
 
         results: list[FileInfo] = []
-        seen_dirs: set[str] = set()
-
-        for file_path, modified_at, line_count in rows:
-            rel = file_path[len(prefix) :] if prefix != "/" else file_path[1:]
-
-            if "/" in rel:
-                dir_name = rel.split("/")[0]
-                dir_path = prefix + dir_name + "/"
-                if dir_path not in seen_dirs:
-                    seen_dirs.add(dir_path)
-                    results.append({"path": dir_path, "is_dir": True})
-            else:
-                results.append(
-                    {
-                        "path": file_path,
-                        "is_dir": False,
-                        "size": line_count,
-                        "modified_at": modified_at.isoformat() if modified_at else None,
-                    }
-                )
+        for row in file_rows:
+            results.append(
+                {
+                    "path": self._virtual_path(row[0]),
+                    "is_dir": False,
+                    "size": row[2],
+                    "modified_at": row[1].isoformat() if row[1] else None,
+                }
+            )
+        for (dir_name,) in dir_rows:
+            results.append(
+                {
+                    "path": self._virtual_path(storage_prefix + dir_name + "/"),
+                    "is_dir": True,
+                }
+            )
 
         results.sort(key=lambda x: x.get("path", ""))
         return results
@@ -828,28 +893,53 @@ class PostgresBackend(BackendProtocol):
     async def agrep_raw(
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> list[GrepMatch] | str:
-        """Search for pattern in files using PostgreSQL."""
+        """Search for pattern in files using PostgreSQL.
+
+        Fetches all candidate paths and their content in a single SQL query,
+        eliminating the previous per-file ``_get_file_data`` loop.
+        Glob and regex filtering are applied in Python after the batch fetch.
+        """
         try:
             regex = re.compile(pattern)
         except re.error as e:
             return f"Invalid regex pattern: {e}"
 
         search_prefix = path or "/"
-        rows = await self._list_paths(search_prefix)
-        matches: list[GrepMatch] = []
+        storage_prefix = self._storage_path(search_prefix)
+        like_pattern = storage_prefix + "%" if storage_prefix else "%"
 
-        for file_path, _, _ in rows:
-            filename = PurePosixPath(file_path).name
+        pool = await self._ensure_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""
+                    SELECT path, content->'content'
+                    FROM {self._table}
+                    WHERE path LIKE %s
+                    ORDER BY path
+                    """,
+                    (like_pattern,),
+                )
+                rows = await cur.fetchall()
+
+        matches: list[GrepMatch] = []
+        for storage_path, content_arr in rows:
+            virtual_path = self._virtual_path(storage_path)
+            filename = PurePosixPath(virtual_path).name
+
             if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
                 continue
 
-            data = await self._get_file_data(file_path)
-            if data is None:
-                continue
+            if isinstance(content_arr, list):
+                lines = content_arr
+            elif isinstance(content_arr, str):
+                lines = json.loads(content_arr)
+            else:
+                lines = []
 
-            for line_num, line in enumerate(data.get("content", []), 1):
+            for line_num, line in enumerate(lines, 1):
                 if regex.search(line):
-                    matches.append({"path": file_path, "line": line_num, "text": line})
+                    matches.append({"path": virtual_path, "line": line_num, "text": line})
 
         return matches
 
@@ -860,17 +950,62 @@ class PostgresBackend(BackendProtocol):
         )
 
     async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
-        """Find files matching a glob pattern."""
-        rows = await self._list_paths(path)
+        """Find files matching a glob pattern.
+
+        Narrows the SQL candidate set using the literal suffix of *pattern*
+        (e.g. ``"*.py"`` → ``AND path LIKE '%.py'``) before applying
+        ``fnmatch`` in Python, avoiding large unrelated result sets.
+        """
+        storage_prefix = self._storage_path(path)
+        like_prefix = storage_prefix + "%" if storage_prefix else "%"
+
+        # Extract a literal suffix from the pattern for SQL pre-filtering.
+        # Only handles the common case: a single leading "*" followed by a
+        # wildcard-free string (e.g. "*.py", "*.txt").  Complex patterns
+        # (brace expansion, embedded wildcards) fall back to prefix-only SQL.
+        stripped = pattern.lstrip("*")
+        like_suffix: str | None = None
+        if stripped and not any(c in stripped for c in "?[{*"):
+            like_suffix = f"%{stripped}"
+
+        pool = await self._ensure_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                if like_suffix:
+                    await cur.execute(
+                        f"""
+                        SELECT path, modified_at,
+                               COALESCE(jsonb_array_length(content->'content'), 0)
+                        FROM {self._table}
+                        WHERE path LIKE %s AND path LIKE %s
+                        ORDER BY path
+                        """,
+                        (like_prefix, like_suffix),
+                    )
+                else:
+                    await cur.execute(
+                        f"""
+                        SELECT path, modified_at,
+                               COALESCE(jsonb_array_length(content->'content'), 0)
+                        FROM {self._table}
+                        WHERE path LIKE %s
+                        ORDER BY path
+                        """,
+                        (like_prefix,),
+                    )
+                rows = await cur.fetchall()
+
         results: list[FileInfo] = []
+        for storage_path, modified_at, line_count in rows:
+            virtual_path = self._virtual_path(storage_path)
+            rel_path = (
+                virtual_path[len(path) :].lstrip("/") if path != "/" else virtual_path[1:]
+            )
 
-        for file_path, modified_at, line_count in rows:
-            rel_path = file_path[len(path) :].lstrip("/") if path != "/" else file_path[1:]
-
-            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(file_path, pattern):
+            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(virtual_path, pattern):
                 results.append(
                     {
-                        "path": file_path,
+                        "path": virtual_path,
                         "is_dir": False,
                         "size": line_count,
                         "modified_at": modified_at.isoformat() if modified_at else None,
@@ -878,6 +1013,7 @@ class PostgresBackend(BackendProtocol):
                 )
 
         results.sort(key=lambda x: x.get("path", ""))
+        return results
         return results
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
