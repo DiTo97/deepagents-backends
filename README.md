@@ -19,10 +19,18 @@ import asyncio
 
 from deepagents import create_deep_agent
 from deepagents_backends import S3Backend, S3Config
+from langchain_anthropic import ChatAnthropic
+
+
+def create_default_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
 
 
 async def main():
-    # Configure S3 (or MinIO for local development)
     config = S3Config(
         bucket="my-agent-bucket",
         prefix="agent-workspace",
@@ -32,13 +40,12 @@ async def main():
         use_ssl=False,
     )
 
-    # Create agent with S3 backend
     agent = create_deep_agent(
+        model=create_default_model(),
         backend=S3Backend(config),
         system_prompt="You are a helpful assistant. Files persist in S3.",
     )
 
-    # Run the agent - all file operations use S3
     result = await agent.ainvoke({
         "messages": [{"role": "user", "content": "Create a Python calculator module in /src/"}]
     })
@@ -55,8 +62,23 @@ Store agent files in PostgreSQL with connection pooling for high-performance sce
 
 ```python
 import asyncio
+import sys
+
 from deepagents import create_deep_agent
 from deepagents_backends import PostgresBackend, PostgresConfig
+from langchain_anthropic import ChatAnthropic
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def create_default_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
 
 async def main():
     config = PostgresConfig(
@@ -69,10 +91,11 @@ async def main():
     )
 
     backend = PostgresBackend(config)
-    await backend.initialize()  # Creates table + indexes
+    await backend.initialize()
 
     try:
         agent = create_deep_agent(
+            model=create_default_model(),
             backend=backend,
             system_prompt="You are a data analyst. Files persist in PostgreSQL.",
         )
@@ -81,7 +104,7 @@ async def main():
             "messages": [{"role": "user", "content": "Create a data analysis project in /analysis/"}]
         })
     finally:
-        await backend.close()  # Always close the connection pool
+        await backend.close()
 
 asyncio.run(main())
 ```
@@ -92,26 +115,54 @@ Route different paths to different backends for optimal storage:
 
 ```python
 import asyncio
+import sys
 
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+from langchain_anthropic import ChatAnthropic
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def create_default_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
 
 
 async def main():
-    # S3 for large files, PostgreSQL for structured data
-    s3_backend = S3Backend(S3Config(bucket="assets", ...))
-    pg_backend = PostgresBackend(PostgresConfig(...))
+    s3_backend = S3Backend(
+        S3Config(
+            bucket="my-asset-bucket",
+            prefix="agent-assets",
+            region="us-east-1",
+        )
+    )
+    pg_backend = PostgresBackend(
+        PostgresConfig(
+            host="localhost",
+            port=5432,
+            database="deepagents",
+            user="postgres",
+            password="postgres",
+            table="agent_files",
+        )
+    )
     await pg_backend.initialize()
 
     try:
         agent = create_deep_agent(
-            backend=CompositeBackend(
-                default=StateBackend(),  # Ephemeral working files
+            model=create_default_model(),
+            backend=lambda runtime: CompositeBackend(
+                default=StateBackend(runtime),
                 routes={
-                    "/assets/": s3_backend,    # Large files → S3
-                    "/data/": pg_backend,      # Structured data → PostgreSQL
-                    "/memories/": pg_backend,  # Long-term memory → PostgreSQL
+                    "/assets/": s3_backend,
+                    "/data/": pg_backend,
+                    "/memories/": pg_backend,
                 },
             ),
         )

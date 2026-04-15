@@ -1,7 +1,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "deepagents",
+#     "deepagents==0.3.1",
+#     "langchain-anthropic==1.3.1",
+#     "anthropic==0.75.0",
 #     "deepagents-backends",
 # ]
 # ///
@@ -21,11 +23,17 @@ Usage:
     uv run examples/s3_deep_agent.py
 """
 
+import aioboto3
 import asyncio
 import os
+import sys
 
 from deepagents import create_deep_agent
 from deepagents_backends import S3Backend, S3Config
+from langchain_anthropic import ChatAnthropic
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 def create_s3_backend_for_minio() -> S3Backend:
@@ -55,15 +63,46 @@ def create_s3_backend_for_aws() -> S3Backend:
     return S3Backend(config)
 
 
+def create_default_model() -> ChatAnthropic:
+    """Create a Claude model configured for DeepAgent prompt caching."""
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def ensure_minio_bucket_exists() -> None:
+    """Create the local MinIO bucket used by the examples if needed."""
+    session = aioboto3.Session(
+        aws_access_key_id="minioadmin",
+        aws_secret_access_key="minioadmin",
+    )
+    async with session.client(
+        "s3",
+        endpoint_url="http://localhost:9000",
+        region_name="us-east-1",
+        use_ssl=False,
+    ) as s3:
+        try:
+            await s3.create_bucket(Bucket="test-bucket")
+        except s3.exceptions.BucketAlreadyOwnedByYou:
+            pass
+        except s3.exceptions.BucketAlreadyExists:
+            pass
+
+
 async def main():
     """Run a DeepAgent with S3 backend for persistent file storage."""
 
     # Create S3 backend (use MinIO for local development)
+    await ensure_minio_bucket_exists()
     backend = create_s3_backend_for_minio()
 
     # Create the deep agent with S3 backend
     # All file operations (read, write, edit, glob, grep) will use S3
     agent = create_deep_agent(
+        model=create_default_model(),
         backend=backend,
         system_prompt="""You are a Python developer assistant.
 
@@ -108,9 +147,11 @@ Store all files under /calculator/""",
 
 async def streaming_example():
     """Example showing streaming with S3 backend."""
+    await ensure_minio_bucket_exists()
     backend = create_s3_backend_for_minio()
 
     agent = create_deep_agent(
+        model=create_default_model(),
         backend=backend,
         system_prompt="You are a helpful coding assistant. Store files in S3.",
     )
@@ -153,6 +194,7 @@ async def with_custom_tools():
             "uv run --with tavily-python examples/s3_deep_agent.py"
         ) from exc
 
+    await ensure_minio_bucket_exists()
     backend = create_s3_backend_for_minio()
 
     # Add web search capability (requires TAVILY_API_KEY)
@@ -169,6 +211,7 @@ async def with_custom_tools():
         tools.append(internet_search)
 
     agent = create_deep_agent(
+        model=create_default_model(),
         backend=backend,
         tools=tools,
         system_prompt="""You are a research assistant.
