@@ -19,10 +19,35 @@ Usage:
     uv run examples/basic_usage.py
 """
 
+import aioboto3
 import asyncio
+import sys
 import uuid
 
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+async def ensure_minio_bucket_exists() -> None:
+    """Create the local MinIO bucket used by the examples if needed."""
+    session = aioboto3.Session(
+        aws_access_key_id="minioadmin",
+        aws_secret_access_key="minioadmin",
+    )
+    async with session.client(
+        "s3",
+        endpoint_url="http://localhost:9000",
+        region_name="us-east-1",
+        use_ssl=False,
+    ) as s3:
+        try:
+            await s3.create_bucket(Bucket="test-bucket")
+        except s3.exceptions.BucketAlreadyOwnedByYou:
+            pass
+        except s3.exceptions.BucketAlreadyExists:
+            pass
 
 
 async def s3_backend_operations() -> None:
@@ -46,6 +71,7 @@ async def s3_backend_operations() -> None:
         use_ssl=False,
     )
 
+    await ensure_minio_bucket_exists()
     backend = S3Backend(config)
 
     # Write a file (fails if exists - use edit for modifications)

@@ -1,7 +1,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "deepagents",
+#     "deepagents==0.3.1",
+#     "langchain-anthropic==1.3.1",
+#     "anthropic==0.75.0",
 #     "deepagents-backends",
 # ]
 # ///
@@ -24,10 +26,17 @@ Usage:
 
 import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from deepagents import create_deep_agent
 from deepagents_backends import PostgresBackend, PostgresConfig
+from langchain_anthropic import ChatAnthropic
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 def create_postgres_config_for_local() -> PostgresConfig:
@@ -59,6 +68,15 @@ def create_postgres_config_for_production() -> PostgresConfig:
     )
 
 
+def create_default_model() -> ChatAnthropic:
+    """Create a Claude model configured for DeepAgent prompt caching."""
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
 @asynccontextmanager
 async def postgres_backend(config: PostgresConfig):
     """Context manager for PostgresBackend with proper lifecycle management."""
@@ -81,6 +99,7 @@ async def main():
         # Create the deep agent with PostgreSQL backend
         # All file operations will use PostgreSQL with connection pooling
         agent = create_deep_agent(
+            model=create_default_model(),
             backend=backend,
             system_prompt="""You are a data analysis assistant.
 
@@ -132,12 +151,14 @@ async def multi_agent_example():
     async with postgres_backend(config) as backend:
         # Create specialized agents that share the same backend
         researcher = create_deep_agent(
+            model=create_default_model(),
             backend=backend,
             system_prompt="""You are a research agent.
 Your job is to research topics and save findings to /research/.""",
         )
 
         writer = create_deep_agent(
+            model=create_default_model(),
             backend=backend,
             system_prompt="""You are a technical writer.
 Read research from /research/ and create polished documentation in /docs/.""",
@@ -211,6 +232,7 @@ Create thorough test suites with:
 
         # Main agent can delegate to sub-agents
         agent = create_deep_agent(
+            model=create_default_model(),
             backend=backend,
             subagents=[code_reviewer, test_writer],
             system_prompt="""You are a senior developer who coordinates code quality.

@@ -1,7 +1,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "deepagents",
+#     "deepagents==0.3.1",
+#     "langchain-anthropic==1.3.1",
+#     "anthropic==0.75.0",
 #     "deepagents-backends",
 # ]
 # ///
@@ -23,12 +25,20 @@ Usage:
     uv run examples/composite_backend.py
 """
 
+import aioboto3
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+from langchain_anthropic import ChatAnthropic
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 def create_s3_backend() -> S3Backend:
@@ -56,9 +66,38 @@ def create_postgres_config() -> PostgresConfig:
     )
 
 
+def create_default_model() -> ChatAnthropic:
+    """Create a Claude model configured for DeepAgent prompt caching."""
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def ensure_minio_bucket_exists() -> None:
+    """Create the local MinIO bucket used by the examples if needed."""
+    session = aioboto3.Session(
+        aws_access_key_id="minioadmin",
+        aws_secret_access_key="minioadmin",
+    )
+    async with session.client(
+        "s3",
+        endpoint_url="http://localhost:9000",
+        region_name="us-east-1",
+        use_ssl=False,
+    ) as s3:
+        try:
+            await s3.create_bucket(Bucket="test-bucket")
+        except s3.exceptions.BucketAlreadyOwnedByYou:
+            pass
+        except s3.exceptions.BucketAlreadyExists:
+            pass
+
+
 @asynccontextmanager
 async def composite_backend():
-    """Create a composite backend with multiple storage routes.
+    """Create a composite backend factory with multiple storage routes.
 
     Route configuration:
     - /assets/ → S3 (large files, binary data)
@@ -66,23 +105,24 @@ async def composite_backend():
     - /memories/ → PostgreSQL (persistent across sessions)
     - Everything else → Ephemeral state (temporary working files)
     """
+    await ensure_minio_bucket_exists()
     s3_backend = create_s3_backend()
     pg_backend = PostgresBackend(create_postgres_config())
 
     try:
         await pg_backend.initialize()
 
-        # Create composite backend with path-based routing
-        backend = CompositeBackend(
-            default=StateBackend(),  # Ephemeral for working files
-            routes={
-                "/assets/": s3_backend,  # Large files go to S3
-                "/data/": pg_backend,  # Structured data to PostgreSQL
-                "/memories/": pg_backend,  # Long-term memory to PostgreSQL
-            },
-        )
+        def backend_factory(runtime):
+            return CompositeBackend(
+                default=StateBackend(runtime),
+                routes={
+                    "/assets/": s3_backend,
+                    "/data/": pg_backend,
+                    "/memories/": pg_backend,
+                },
+            )
 
-        yield backend
+        yield backend_factory
 
     finally:
         await pg_backend.close()
@@ -91,9 +131,10 @@ async def composite_backend():
 async def main():
     """Run a DeepAgent with hybrid S3 + PostgreSQL storage."""
 
-    async with composite_backend() as backend:
+    async with composite_backend() as backend_factory:
         agent = create_deep_agent(
-            backend=backend,
+            model=create_default_model(),
+            backend=backend_factory,
             system_prompt="""You are a data processing assistant with hybrid storage.
 
 Storage routing:
@@ -144,10 +185,11 @@ Then explain where each file is stored and why.""",
 async def long_term_memory_example():
     """Example: Simulating persistent agent memory with a composite backend."""
 
-    async with composite_backend() as backend:
+    async with composite_backend() as backend_factory:
         # First interaction - agent learns user preferences
         agent = create_deep_agent(
-            backend=backend,
+            model=create_default_model(),
+            backend=backend_factory,
             system_prompt="""You are a personalized assistant with long-term memory.
 
 Store user preferences and learned information in /memories/.
