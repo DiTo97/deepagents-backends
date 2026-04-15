@@ -139,6 +139,62 @@ class TestPostgresBackendUnit:
         finally:
             coroutine.close()
 
+    async def test_aupload_files_success(self, backend, mock_pool):
+        responses = await backend.aupload_files([("data/config.json", b"line1\nline2")])
+
+        assert len(responses) == 1
+        assert responses[0].path == "data/config.json"
+        assert responses[0].error is None
+        assert mock_pool[1].execute.called
+        assert mock_pool[1].commit.called
+
+        _, params = mock_pool[1].execute.call_args.args
+        assert params[0] == "data/config.json"
+        assert json.loads(params[1]) == {"content": ["line1", "line2"]}
+
+    async def test_aupload_files_invalid_path_on_exception(self, backend, mock_pool):
+        mock_pool[1].execute.side_effect = RuntimeError("boom")
+
+        responses = await backend.aupload_files([("broken.txt", b"oops")])
+
+        assert len(responses) == 1
+        assert responses[0].path == "broken.txt"
+        assert responses[0].error == "invalid_path"
+        assert mock_pool[1].commit.called
+
+    async def test_adownload_files_success(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = ({"content": ["line1", "line2"]},)
+
+        responses = await backend.adownload_files(["data/config.json"])
+
+        assert len(responses) == 1
+        assert responses[0].path == "data/config.json"
+        assert responses[0].content == b"line1\nline2"
+        assert responses[0].error is None
+
+    async def test_adownload_files_file_not_found(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = None
+
+        responses = await backend.adownload_files(["missing.txt"])
+
+        assert len(responses) == 1
+        assert responses[0].path == "missing.txt"
+        assert responses[0].content is None
+        assert responses[0].error == "file_not_found"
+
+    async def test_adownload_files_invalid_path_on_exception(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.execute.side_effect = RuntimeError("boom")
+
+        responses = await backend.adownload_files(["broken.txt"])
+
+        assert len(responses) == 1
+        assert responses[0].path == "broken.txt"
+        assert responses[0].content is None
+        assert responses[0].error == "invalid_path"
+
 
 @pytest.mark.unit
 class TestPostgresBackendScalability:
