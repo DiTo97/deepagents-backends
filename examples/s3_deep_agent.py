@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "deepagents==0.3.1",
-#     "langchain-anthropic==1.3.1",
-#     "anthropic==0.75.0",
+#     "deepagents==0.5.2",
+#     "langchain-anthropic==1.4.0",
+#     "anthropic==0.95.0",
 #     "deepagents-backends",
 # ]
 # ///
