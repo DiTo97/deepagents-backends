@@ -3,6 +3,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
+from deepagents.backends.utils import (
+    check_empty_content,
+    format_content_with_line_numbers,
+    perform_string_replacement,
+)
 
 import deepagents_backends
 from deepagents_backends import S3Backend
@@ -205,6 +210,123 @@ class TestS3BackendUnit:
         assert responses[0].path == "secret.txt"
         assert responses[0].content is None
         assert responses[0].error == "permission_denied"
+
+    async def test_aread_respects_offset_and_limit(self, backend, mock_s3_client):
+        content = json.dumps({"content": ["line1", "line2", "line3"]}).encode("utf-8")
+        mock_body = AsyncMock()
+        mock_body.read.return_value = content
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.aread("paged.txt", offset=1, limit=1)
+
+        assert result == format_content_with_line_numbers(["line2"], start_line=2)
+
+    async def test_aread_returns_empty_content_message(self, backend, mock_s3_client):
+        content = json.dumps({"content": []}).encode("utf-8")
+        mock_body = AsyncMock()
+        mock_body.read.return_value = content
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.aread("empty.txt")
+
+        assert result == check_empty_content("")
+
+    async def test_aread_offset_beyond_end_returns_error(self, backend, mock_s3_client):
+        content = json.dumps({"content": ["line1", "line2"]}).encode("utf-8")
+        mock_body = AsyncMock()
+        mock_body.read.return_value = content
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.aread("short.txt", offset=2)
+
+        assert result == "Error: Line offset 2 exceeds file length (2 lines)"
+
+    async def test_aedit_file_not_found(self, backend, mock_s3_client):
+        error_response = {"Error": {"Code": "NoSuchKey", "Message": "Not Found"}}
+        mock_s3_client.get_object.side_effect = ClientError(error_response, "GetObject")
+
+        result = await backend.aedit("missing.txt", "old", "new")
+
+        assert result.error == "Error: File 'missing.txt' not found"
+
+    async def test_aedit_returns_replacement_error(self, backend, mock_s3_client):
+        content = json.dumps({"content": ["hello world"]}).encode("utf-8")
+        mock_body = AsyncMock()
+        mock_body.read.return_value = content
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.aedit("test.txt", "missing", "new")
+
+        assert result.error == perform_string_replacement("hello world", "missing", "new", False)
+
+    async def test_aedit_successful_single_replacement(self, backend, mock_s3_client):
+        content = json.dumps({"content": ["hello world"]}).encode("utf-8")
+        mock_body = AsyncMock()
+        mock_body.read.return_value = content
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.aedit("test.txt", "world", "there")
+
+        assert result.error is None
+        assert result.occurrences == 1
+
+        stored = json.loads(mock_s3_client.put_object.call_args.kwargs["Body"].decode("utf-8"))
+        assert stored["content"] == ["hello there"]
+
+    async def test_aedit_replace_all_updates_every_occurrence(self, backend, mock_s3_client):
+        content = json.dumps({"content": ["old old", "old"]}).encode("utf-8")
+        mock_body = AsyncMock()
+        mock_body.read.return_value = content
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.aedit("test.txt", "old", "new", replace_all=True)
+
+        assert result.error is None
+        assert result.occurrences == 3
+
+        stored = json.loads(mock_s3_client.put_object.call_args.kwargs["Body"].decode("utf-8"))
+        assert stored["content"] == ["new new", "new"]
+
+    async def test_agrep_raw_invalid_regex_returns_error(self, backend):
+        result = await backend.agrep_raw("[")
+
+        assert isinstance(result, str)
+        assert result.startswith("Invalid regex pattern:")
+
+    async def test_agrep_raw_glob_filters_filenames_before_fetch(self, backend, mock_s3_client):
+        paginator = MagicMock()
+        mock_s3_client.get_paginator.return_value = paginator
+        lm = MagicMock()
+        lm.isoformat.return_value = "2024-01-01T00:00:00Z"
+
+        async def async_pages(*args, **kwargs):
+            yield {
+                "Contents": [
+                    {"Key": "unit-test/search/match.py", "Size": 10, "LastModified": lm},
+                    {"Key": "unit-test/search/skip.txt", "Size": 10, "LastModified": lm},
+                ]
+            }
+
+        paginator.paginate.return_value = async_pages()
+
+        mock_body = AsyncMock()
+        mock_body.read.return_value = json.dumps({"content": ["needle"]}).encode("utf-8")
+        mock_body.__aenter__.return_value = mock_body
+        mock_s3_client.get_object.return_value = {"Body": mock_body}
+
+        result = await backend.agrep_raw("needle", "/search", "*.py")
+
+        assert result == [{"path": "/search/match.py", "line": 1, "text": "needle"}]
+        mock_s3_client.get_object.assert_called_once_with(
+            Bucket="unit-test-bucket",
+            Key="unit-test/search/match.py",
+        )
 
 
 @pytest.mark.unit

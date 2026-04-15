@@ -2,6 +2,12 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from deepagents.backends.utils import (
+    check_empty_content,
+    format_content_with_line_numbers,
+    perform_string_replacement,
+)
+
 import deepagents_backends
 from deepagents_backends import PostgresBackend
 from tests.scalability import (
@@ -194,6 +200,93 @@ class TestPostgresBackendUnit:
         assert responses[0].path == "broken.txt"
         assert responses[0].content is None
         assert responses[0].error == "invalid_path"
+
+    async def test_aread_respects_offset_and_limit(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = [
+            json.dumps({"content": ["line1", "line2", "line3"]}),
+            None,
+            None,
+        ]
+
+        result = await backend.aread("paged.txt", offset=1, limit=1)
+
+        assert result == format_content_with_line_numbers(["line2"], start_line=2)
+
+    async def test_aread_returns_empty_content_message(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = [json.dumps({"content": []}), None, None]
+
+        result = await backend.aread("empty.txt")
+
+        assert result == check_empty_content("")
+
+    async def test_aread_offset_beyond_end_returns_error(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = [json.dumps({"content": ["line1", "line2"]}), None, None]
+
+        result = await backend.aread("short.txt", offset=2)
+
+        assert result == "Error: Line offset 2 exceeds file length (2 lines)"
+
+    async def test_aedit_file_not_found(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = None
+
+        result = await backend.aedit("missing.txt", "old", "new")
+
+        assert result.error == "Error: File 'missing.txt' not found"
+
+    async def test_aedit_returns_replacement_error(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = [json.dumps({"content": ["hello world"]}), None, None]
+
+        result = await backend.aedit("test.txt", "missing", "new")
+
+        assert result.error == perform_string_replacement("hello world", "missing", "new", False)
+
+    async def test_aedit_successful_single_replacement(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = [json.dumps({"content": ["hello world"]}), None, None]
+
+        result = await backend.aedit("test.txt", "world", "there")
+
+        assert result.error is None
+        assert result.occurrences == 1
+
+        _, params = mock_pool[1].execute.call_args.args
+        assert params[0] == "test.txt"
+        assert json.loads(params[1]) == {"content": ["hello there"]}
+
+    async def test_aedit_replace_all_updates_every_occurrence(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchone.return_value = [json.dumps({"content": ["old old", "old"]}), None, None]
+
+        result = await backend.aedit("test.txt", "old", "new", replace_all=True)
+
+        assert result.error is None
+        assert result.occurrences == 3
+
+        _, params = mock_pool[1].execute.call_args.args
+        assert params[0] == "test.txt"
+        assert json.loads(params[1]) == {"content": ["new new", "new"]}
+
+    async def test_agrep_raw_invalid_regex_returns_error(self, backend):
+        result = await backend.agrep_raw("[")
+
+        assert isinstance(result, str)
+        assert result.startswith("Invalid regex pattern:")
+
+    async def test_agrep_raw_glob_filters_filenames(self, backend, mock_pool):
+        _, _, mock_cur = mock_pool
+        mock_cur.fetchall.return_value = [
+            ("search/match.py", ["needle"]),
+            ("search/skip.txt", ["needle"]),
+        ]
+
+        result = await backend.agrep_raw("needle", "/search", "*.py")
+
+        assert result == [{"path": "/search/match.py", "line": 1, "text": "needle"}]
 
 
 @pytest.mark.unit
