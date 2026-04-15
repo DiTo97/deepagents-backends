@@ -1,4 +1,4 @@
-# AGENTS.md: Deep Agents Remote Backends
+# Deep Agents Remote Backends
 
 ## Project Overview
 

@@ -169,7 +169,10 @@ When you learn something about the user, save it to:
                 "messages": [
                     {
                         "role": "user",
-                        "content": "I prefer Python over JavaScript, and I like detailed explanations. Remember this for our future conversations.",
+                        "content": (
+                            "I prefer Python over JavaScript, and I like detailed explanations."
+                            " Remember this for our future conversations."
+                        ),
                     }
                 ]
             }
@@ -177,12 +180,15 @@ When you learn something about the user, save it to:
 
         # Session 2: Use remembered preferences
         print("\n[Session 2] Using remembered preferences...")
-        result = await agent.ainvoke(
+        await agent.ainvoke(
             {
                 "messages": [
                     {
                         "role": "user",
-                        "content": "Read my preferences from /memories/ and recommend a good framework for building web APIs.",
+                        "content": (
+                            "Read my preferences from /memories/ and recommend"
+                            " a good framework for building web APIs."
+                        ),
                     }
                 ]
             }
