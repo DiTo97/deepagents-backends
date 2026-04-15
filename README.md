@@ -15,29 +15,38 @@ pip install deepagents-backends
 Store agent files in AWS S3 or any S3-compatible storage (MinIO, DigitalOcean Spaces, etc.):
 
 ```python
+import asyncio
+
 from deepagents import create_deep_agent
 from deepagents_backends import S3Backend, S3Config
 
-# Configure S3 (or MinIO for local development)
-config = S3Config(
-    bucket="my-agent-bucket",
-    prefix="agent-workspace",
-    endpoint_url="http://localhost:9000",  # Remove for AWS S3
-    access_key_id="minioadmin",
-    secret_access_key="minioadmin",
-    use_ssl=False,
-)
 
-# Create agent with S3 backend
-agent = create_deep_agent(
-    backend=S3Backend(config),
-    system_prompt="You are a helpful assistant. Files persist in S3.",
-)
+async def main():
+    # Configure S3 (or MinIO for local development)
+    config = S3Config(
+        bucket="my-agent-bucket",
+        prefix="agent-workspace",
+        endpoint_url="http://localhost:9000",  # Remove for AWS S3
+        access_key_id="minioadmin",
+        secret_access_key="minioadmin",
+        use_ssl=False,
+    )
 
-# Run the agent - all file operations use S3
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "Create a Python calculator module in /src/"}]
-})
+    # Create agent with S3 backend
+    agent = create_deep_agent(
+        backend=S3Backend(config),
+        system_prompt="You are a helpful assistant. Files persist in S3.",
+    )
+
+    # Run the agent - all file operations use S3
+    result = await agent.ainvoke({
+        "messages": [{"role": "user", "content": "Create a Python calculator module in /src/"}]
+    })
+
+    print(result)
+
+
+asyncio.run(main())
 ```
 
 ### PostgreSQL Backend
@@ -82,25 +91,39 @@ asyncio.run(main())
 Route different paths to different backends for optimal storage:
 
 ```python
+import asyncio
+
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
-from deepagents_backends import S3Backend, S3Config, PostgresBackend, PostgresConfig
+from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
 
-# S3 for large files, PostgreSQL for structured data
-s3_backend = S3Backend(S3Config(bucket="assets", ...))
-pg_backend = PostgresBackend(PostgresConfig(...))
-await pg_backend.initialize()
 
-agent = create_deep_agent(
-    backend=CompositeBackend(
-        default=StateBackend(),  # Ephemeral working files
-        routes={
-            "/assets/": s3_backend,    # Large files → S3
-            "/data/": pg_backend,      # Structured data → PostgreSQL
-            "/memories/": pg_backend,  # Long-term memory → PostgreSQL
-        },
-    ),
-)
+async def main():
+    # S3 for large files, PostgreSQL for structured data
+    s3_backend = S3Backend(S3Config(bucket="assets", ...))
+    pg_backend = PostgresBackend(PostgresConfig(...))
+    await pg_backend.initialize()
+
+    try:
+        agent = create_deep_agent(
+            backend=CompositeBackend(
+                default=StateBackend(),  # Ephemeral working files
+                routes={
+                    "/assets/": s3_backend,    # Large files → S3
+                    "/data/": pg_backend,      # Structured data → PostgreSQL
+                    "/memories/": pg_backend,  # Long-term memory → PostgreSQL
+                },
+            ),
+        )
+
+        await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Set up a hybrid workspace under /assets and /data."}]
+        })
+    finally:
+        await pg_backend.close()
+
+
+asyncio.run(main())
 ```
 
 ## 📚 Examples
@@ -121,7 +144,7 @@ See the [examples/](examples/) directory for complete, runnable examples:
 docker-compose up -d
 
 # Run an example
-python examples/s3_deep_agent.py
+uv run examples/s3_deep_agent.py
 ```
 
 ## ⚙️ Configuration
@@ -154,8 +177,8 @@ PostgresConfig(
     user="postgres",                 # Username
     password="postgres",             # Password
     table="agent_files",             # Table name for file storage
-    min_pool_size=2,                 # Minimum connections in pool
-    max_pool_size=10,                # Maximum connections in pool
+    min_pool_size=5,                 # Minimum connections in pool
+    max_pool_size=20,                # Maximum connections in pool
     sslmode="prefer",                # SSL mode (use "require" in production)
 )
 ```
