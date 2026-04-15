@@ -20,15 +20,21 @@ Usage:
 """
 
 import asyncio
+import uuid
 
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
 
 
 async def s3_backend_operations() -> None:
     """Demonstrate low-level S3Backend file operations."""
+    root = f"/s3-basic-usage-{uuid.uuid4().hex[:8]}"
+    source_file = f"{root}/src/hello.py"
+    data_dir = f"{root}/data"
+
     print("=" * 60)
     print("S3 Backend - Low-level Operations")
     print("=" * 60)
+    print(f"Workspace root: {root}")
 
     # Configure for MinIO (local S3-compatible storage)
     config = S3Config(
@@ -43,50 +49,54 @@ async def s3_backend_operations() -> None:
     backend = S3Backend(config)
 
     # Write a file (fails if exists - use edit for modifications)
-    result = await backend.awrite("/src/hello.py", 'print("Hello, World!")')
+    result = await backend.awrite(source_file, 'print("Hello, World!")')
     print(f"Write result: {result}")
 
     # Read the file (supports offset/limit for pagination)
-    content = await backend.aread("/src/hello.py")
+    content = await backend.aread(source_file)
     print(f"Read content:\n{content}")
 
     # Edit the file (string replacement)
     edit_result = await backend.aedit(
-        "/src/hello.py",
+        source_file,
         "Hello, World!",
         "Hello from S3!",
     )
     print(f"Edit result: {edit_result}")
 
     # List files in directory
-    files = await backend.als_info("/src")
-    print(f"Files in /src: {files}")
+    files = await backend.als_info(f"{root}/src")
+    print(f"Files in {root}/src: {files}")
 
     # Glob pattern matching
-    py_files = await backend.aglob_info("**/*.py", "/")
-    print(f"All Python files: {py_files}")
+    py_files = await backend.aglob_info("**/*.py", root)
+    print(f"All Python files under {root}: {py_files}")
 
     # Grep search with line numbers
-    matches = await backend.agrep_raw("Hello", "/src", "*.py")
+    matches = await backend.agrep_raw("Hello", f"{root}/src", "*.py")
     print(f"Grep matches: {matches}")
 
     # Batch upload raw bytes
     responses = await backend.aupload_files([
-        ("/data/config.json", b'{"version": 1}'),
-        ("/data/readme.txt", b"This is a readme file."),
+        (f"{data_dir}/config.json", b'{"version": 1}'),
+        (f"{data_dir}/readme.txt", b"This is a readme file."),
     ])
     print(f"Upload responses: {responses}")
 
     # Download files as bytes
-    downloads = await backend.adownload_files(["/data/config.json"])
+    downloads = await backend.adownload_files([f"{data_dir}/config.json"])
     print(f"Download responses: {downloads}")
 
 
 async def postgres_backend_operations() -> None:
     """Demonstrate low-level PostgresBackend file operations."""
+    root = f"/postgres-basic-usage-{uuid.uuid4().hex[:8]}"
+    source_file = f"{root}/project/main.py"
+
     print("\n" + "=" * 60)
     print("PostgreSQL Backend - Low-level Operations")
     print("=" * 60)
+    print(f"Workspace root: {root}")
 
     config = PostgresConfig(
         host="localhost",
@@ -108,44 +118,44 @@ async def postgres_backend_operations() -> None:
 
         # Write a file
         result = await backend.awrite(
-            "/project/main.py",
+            source_file,
             """def main():
-    print("Hello from PostgreSQL!")
+    print(\"Hello from PostgreSQL!\")
 
-if __name__ == "__main__":
+if __name__ == \"__main__\":
     main()
 """,
         )
         print(f"Write result: {result}")
 
         # Read the file
-        content = await backend.aread("/project/main.py")
+        content = await backend.aread(source_file)
         print(f"Read content:\n{content}")
 
         # Edit the file
         edit_result = await backend.aedit(
-            "/project/main.py",
+            source_file,
             "Hello from PostgreSQL!",
             "Hello from Deep Agents!",
         )
         print(f"Edit result: {edit_result}")
 
         # List files
-        files = await backend.als_info("/project")
-        print(f"Files in /project: {files}")
+        files = await backend.als_info(f"{root}/project")
+        print(f"Files in {root}/project: {files}")
 
         # Glob search
-        py_files = await backend.aglob_info("**/*.py", "/")
-        print(f"Python files: {py_files}")
+        py_files = await backend.aglob_info("**/*.py", root)
+        print(f"Python files under {root}: {py_files}")
 
         # Grep search with line numbers
-        matches = await backend.agrep_raw("def ", "/project")
+        matches = await backend.agrep_raw("def ", f"{root}/project")
         print(f"Grep matches for 'def ': {matches}")
 
         # Batch upload
         responses = await backend.aupload_files([
-            ("/project/utils.py", b"# Utility functions\n"),
-            ("/project/tests/test_main.py", b"# Tests\n"),
+            (f"{root}/project/utils.py", b"# Utility functions\n"),
+            (f"{root}/project/tests/test_main.py", b"# Tests\n"),
         ])
         print(f"Upload responses: {responses}")
 
@@ -168,9 +178,8 @@ async def main() -> None:
     print("Prerequisites: docker-compose up -d")
     print()
 
-    # Uncomment to run:
-    # await s3_backend_operations()
-    # await postgres_backend_operations()
+    await s3_backend_operations()
+    await postgres_backend_operations()
 
 
 if __name__ == "__main__":
