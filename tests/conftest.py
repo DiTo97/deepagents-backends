@@ -5,6 +5,7 @@ Pytest configuration and fixtures for deepagents-backends tests.
 import asyncio
 import os
 import sys
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -149,10 +150,10 @@ def _check_minio_ready(endpoint_url: str) -> bool:
 
 @pytest.fixture
 def s3_config(minio_url: str) -> S3Config:
-    """S3Config for MinIO test instance."""
+    """S3Config for MinIO test instance with a unique prefix per test."""
     return S3Config(
         bucket="test-bucket",
-        prefix="test-run",
+        prefix=f"test-run-{uuid.uuid4().hex[:8]}",
         endpoint_url=minio_url,
         access_key_id="minioadmin",
         secret_access_key="minioadmin",
