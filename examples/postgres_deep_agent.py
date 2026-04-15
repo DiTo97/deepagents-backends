@@ -153,7 +153,10 @@ Read research from /research/ and create polished documentation in /docs/.""",
                 "messages": [
                     {
                         "role": "user",
-                        "content": "Research best practices for Python async programming and save notes to /research/async_python.md",
+                        "content": (
+                            "Research best practices for Python async programming"
+                            " and save notes to /research/async_python.md"
+                        ),
                     }
                 ]
             }
@@ -166,7 +169,10 @@ Read research from /research/ and create polished documentation in /docs/.""",
                 "messages": [
                     {
                         "role": "user",
-                        "content": "Read the research in /research/ and create a polished guide at /docs/async_guide.md",
+                        "content": (
+                            "Read the research in /research/ and create a polished"
+                            " guide at /docs/async_guide.md"
+                        ),
                     }
                 ]
             }
@@ -220,7 +226,7 @@ All files are stored in PostgreSQL for persistence.""",
         print("Sub-agents with PostgreSQL Example")
         print("=" * 60)
 
-        result = await agent.ainvoke(
+        await agent.ainvoke(
             {
                 "messages": [
                     {
@@ -239,13 +245,11 @@ All files are stored in PostgreSQL for persistence.""",
 
 async def human_in_the_loop_example():
     """Example: PostgreSQL backend with human-in-the-loop approval."""
-    from langgraph.checkpoint.memory import MemorySaver
-
     config = create_postgres_config_for_local()
 
     async with postgres_backend(config) as backend:
         # Configure tools that require human approval
-        agent = create_deep_agent(
+        _agent = create_deep_agent(
             backend=backend,
             interrupt_on={
                 # File writes require approval

@@ -124,7 +124,10 @@ async def streaming_example():
             "messages": [
                 {
                     "role": "user",
-                    "content": "Read any existing files in /calculator/ and summarize what's there. If nothing exists, say so.",
+                    "content": (
+                        "Read any existing files in /calculator/ and summarize what's there."
+                        " If nothing exists, say so."
+                    ),
                 }
             ]
         }
@@ -166,12 +169,15 @@ Use web search to find information, then save your research as
 well-organized markdown files in S3 for future reference.""",
     )
 
-    result = await agent.ainvoke(
+    await agent.ainvoke(
         {
             "messages": [
                 {
                     "role": "user",
-                    "content": "Research the latest Python 3.12 features and save a summary to /research/python312.md",
+                    "content": (
+                        "Research the latest Python 3.12 features and save a summary"
+                        " to /research/python312.md"
+                    ),
                 }
             ]
         }
