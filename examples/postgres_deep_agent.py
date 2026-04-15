@@ -243,35 +243,10 @@ All files are stored in PostgreSQL for persistence.""",
         print("Sub-agent workflow complete!")
 
 
-async def human_in_the_loop_example():
-    """Example: PostgreSQL backend with human-in-the-loop approval."""
-    config = create_postgres_config_for_local()
-
-    async with postgres_backend(config) as backend:
-        # Configure tools that require human approval
-        _agent = create_deep_agent(
-            backend=backend,
-            interrupt_on={
-                # File writes require approval
-                "write_file": {"allowed_decisions": ["approve", "edit", "reject"]},
-                "edit_file": {"allowed_decisions": ["approve", "edit", "reject"]},
-            },
-            system_prompt="You are a careful assistant that asks for approval before writing files.",
-        )
-
-        # Note: In production, you'd use a persistent checkpointer
-        # and handle the interrupt/resume flow
-        print("Human-in-the-Loop with PostgreSQL Example")
-        print("=" * 60)
-        print("This agent will pause for approval before writing files.")
-        print("See LangGraph documentation for full HITL implementation.")
-
-
 if __name__ == "__main__":
-    # Run the main example
+    # Run the primary example
     asyncio.run(main())
 
-    # Uncomment to run other examples:
+    # Optional advanced demos (uncomment one at a time):
     # asyncio.run(multi_agent_example())
     # asyncio.run(with_subagents_example())
-    # asyncio.run(human_in_the_loop_example())

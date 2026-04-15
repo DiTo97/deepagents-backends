@@ -142,10 +142,10 @@ Then explain where each file is stored and why.""",
 
 
 async def long_term_memory_example():
-    """Example: Using composite backend for agent memory across sessions."""
+    """Example: Simulating persistent agent memory with a composite backend."""
 
     async with composite_backend() as backend:
-        # First session - agent learns user preferences
+        # First interaction - agent learns user preferences
         agent = create_deep_agent(
             backend=backend,
             system_prompt="""You are a personalized assistant with long-term memory.
@@ -162,8 +162,8 @@ When you learn something about the user, save it to:
         print("Long-term Memory Example")
         print("=" * 60)
 
-        # Session 1: Learn preferences
-        print("\n[Session 1] Learning user preferences...")
+        # Interaction 1: learn user preferences
+        print("\n[Interaction 1] Learning user preferences...")
         await agent.ainvoke(
             {
                 "messages": [
@@ -178,8 +178,8 @@ When you learn something about the user, save it to:
             }
         )
 
-        # Session 2: Use remembered preferences
-        print("\n[Session 2] Using remembered preferences...")
+        # Interaction 2: revisit the same persistent backend within this script run
+        print("\n[Interaction 2] Using remembered preferences...")
         await agent.ainvoke(
             {
                 "messages": [
@@ -195,11 +195,12 @@ When you learn something about the user, save it to:
         )
 
         print("\n" + "=" * 60)
-        print("Memory persists in PostgreSQL across sessions!")
+        print("This demonstrates how /memories/ can live in PostgreSQL-backed storage.")
+        print("Restart the script to verify persistence across separate runs.")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 
-    # Uncomment for memory example:
+    # Optional advanced demo:
     # asyncio.run(long_term_memory_example())

@@ -3,7 +3,6 @@
 # dependencies = [
 #     "deepagents",
 #     "deepagents-backends",
-#     "tavily-python",
 # ]
 # ///
 """
@@ -142,8 +141,17 @@ async def streaming_example():
 
 
 async def with_custom_tools():
-    """Example: S3 backend with custom tools."""
-    from tavily import TavilyClient
+    """Example: S3 backend with custom tools.
+
+    Requires the optional ``tavily-python`` package to be installed.
+    """
+    try:
+        from tavily import TavilyClient
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install tavily-python to run with_custom_tools(), for example: "
+            "uv run --with tavily-python examples/s3_deep_agent.py"
+        ) from exc
 
     backend = create_s3_backend_for_minio()
 
@@ -187,9 +195,9 @@ well-organized markdown files in S3 for future reference.""",
 
 
 if __name__ == "__main__":
-    # Run the main example
+    # Run the primary example
     asyncio.run(main())
 
-    # Uncomment to run other examples:
+    # Optional advanced demos (uncomment one at a time):
     # asyncio.run(streaming_example())
     # asyncio.run(with_custom_tools())
