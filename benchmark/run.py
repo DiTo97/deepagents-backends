@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import platform
 import shutil
@@ -243,7 +244,7 @@ class S3Adapter:
         asyncio.run(ensure_minio_bucket())
 
     def teardown(self) -> None:
-        return None
+        pass
 
     def write_text(self, path: str, content: str) -> None:
         result = self.backend.write(path, content)
@@ -316,7 +317,7 @@ class PostgresAdapter:
         try:
             asyncio.run(self.backend.close())
         except asyncio.CancelledError:
-            return None
+            pass
 
     def write_text(self, path: str, content: str) -> None:
         result = self.backend.write(path, content)
@@ -575,9 +576,10 @@ RUN_HANDLERS = {
 def build_backend_adapters(run_id: str) -> list[BenchmarkBackend]:
     """Create benchmark adapters."""
 
+    table_suffix = hashlib.sha1(run_id.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
     return [
         FilesystemAdapter(Path("/tmp") / "deepagents-backends-benchmark" / run_id / "filesystem"),
-        PostgresAdapter(f"benchmark_{run_id.replace('-', '_')[:20]}"),
+        PostgresAdapter(f"benchmark_{table_suffix}"),
         S3Adapter(f"benchmark/{run_id}/minio"),
     ]
 
