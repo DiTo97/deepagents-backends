@@ -1,0 +1,482 @@
+{
+  "generated_at": "2026-04-16T16:02:52Z",
+  "run_id": "1126ebb3b067",
+  "warmup_runs": 1,
+  "measured_runs": 5,
+  "managed_services": true,
+  "results_path": "benchmark/results/latest.json",
+  "environment": {
+    "python_version": "3.12.3",
+    "platform": "Linux-6.17.0-1010-azure-x86_64-with-glibc2.39",
+    "machine": "x86_64"
+  },
+  "scenarios": [
+    {
+      "name": "write_small_text",
+      "description": "Create a new 40-line text file in a nested directory.",
+      "operation": "write",
+      "extra": {},
+      "results": [
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "filesystem",
+          "samples_ms": [
+            0.255917,
+            0.242111,
+            0.269903,
+            0.234617,
+            0.229969
+          ],
+          "median_ms": 0.242111,
+          "mean_ms": 0.2465034,
+          "min_ms": 0.229969,
+          "max_ms": 0.269903
+        },
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "postgres",
+          "samples_ms": [
+            3.003544,
+            2.429897,
+            2.030144,
+            1.841131,
+            4.077596
+          ],
+          "median_ms": 2.429897,
+          "mean_ms": 2.6764624,
+          "min_ms": 1.841131,
+          "max_ms": 4.077596
+        },
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "minio_s3",
+          "samples_ms": [
+            59.491591,
+            60.899849,
+            59.089605,
+            60.743511,
+            68.278722
+          ],
+          "median_ms": 60.743511,
+          "mean_ms": 61.700655600000005,
+          "min_ms": 59.089605,
+          "max_ms": 68.278722
+        }
+      ]
+    },
+    {
+      "name": "read_medium_text",
+      "description": "Read a pre-populated 200-line text file.",
+      "operation": "read",
+      "extra": {
+        "lines": 200
+      },
+      "results": [
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "filesystem",
+          "samples_ms": [
+            0.180437,
+            0.180877,
+            0.172071,
+            0.180857,
+            0.176629
+          ],
+          "median_ms": 0.180437,
+          "mean_ms": 0.1781742,
+          "min_ms": 0.172071,
+          "max_ms": 0.180877
+        },
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "postgres",
+          "samples_ms": [
+            1.188885,
+            1.184928,
+            1.157446,
+            1.152496,
+            1.258404
+          ],
+          "median_ms": 1.184928,
+          "mean_ms": 1.1884318,
+          "min_ms": 1.152496,
+          "max_ms": 1.258404
+        },
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "minio_s3",
+          "samples_ms": [
+            29.330949,
+            29.193615,
+            29.411167,
+            29.411428,
+            28.720486
+          ],
+          "median_ms": 29.330949,
+          "mean_ms": 29.213529,
+          "min_ms": 28.720486,
+          "max_ms": 29.411428
+        }
+      ]
+    },
+    {
+      "name": "edit_medium_text",
+      "description": "Replace one marker inside a pre-populated 200-line text file.",
+      "operation": "edit",
+      "extra": {
+        "lines": 200
+      },
+      "results": [
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "filesystem",
+          "samples_ms": [
+            0.222464,
+            0.216354,
+            0.212245,
+            0.213368,
+            0.236962
+          ],
+          "median_ms": 0.216354,
+          "mean_ms": 0.22027860000000002,
+          "min_ms": 0.212245,
+          "max_ms": 0.236962
+        },
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "postgres",
+          "samples_ms": [
+            2.218175,
+            2.207021,
+            2.189762,
+            2.253108,
+            2.491525
+          ],
+          "median_ms": 2.218175,
+          "mean_ms": 2.2719182,
+          "min_ms": 2.189762,
+          "max_ms": 2.491525
+        },
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "minio_s3",
+          "samples_ms": [
+            59.231872,
+            62.727246,
+            60.889741,
+            59.317616,
+            60.168359
+          ],
+          "median_ms": 60.168359,
+          "mean_ms": 60.4669668,
+          "min_ms": 59.231872,
+          "max_ms": 62.727246
+        }
+      ]
+    },
+    {
+      "name": "ls_flat_directory",
+      "description": "List a directory containing 100 direct child files.",
+      "operation": "ls",
+      "extra": {
+        "files": 100
+      },
+      "results": [
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "filesystem",
+          "samples_ms": [
+            11.01329,
+            10.968587,
+            10.969839,
+            10.920106,
+            11.121422
+          ],
+          "median_ms": 10.969839,
+          "mean_ms": 10.998648800000002,
+          "min_ms": 10.920106,
+          "max_ms": 11.121422
+        },
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "postgres",
+          "samples_ms": [
+            2.0395,
+            2.200142,
+            2.157731,
+            2.176044,
+            2.673222
+          ],
+          "median_ms": 2.176044,
+          "mean_ms": 2.2493278,
+          "min_ms": 2.0395,
+          "max_ms": 2.673222
+        },
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "minio_s3",
+          "samples_ms": [
+            41.090732,
+            121.116311,
+            40.800779,
+            40.708393,
+            43.10825
+          ],
+          "median_ms": 41.090732,
+          "mean_ms": 57.364892999999995,
+          "min_ms": 40.708393,
+          "max_ms": 121.116311
+        }
+      ]
+    },
+    {
+      "name": "glob_nested_python",
+      "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+      "operation": "glob",
+      "extra": {
+        "dirs": 5,
+        "matches_per_dir": 12,
+        "non_matches": 25
+      },
+      "results": [
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "filesystem",
+          "samples_ms": [
+            13.025259,
+            12.981056,
+            12.959426,
+            12.985524,
+            12.96661
+          ],
+          "median_ms": 12.981056,
+          "mean_ms": 12.983574999999998,
+          "min_ms": 12.959426,
+          "max_ms": 13.025259
+        },
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "postgres",
+          "samples_ms": [
+            1.631901,
+            1.735678,
+            1.707767,
+            1.6524,
+            1.793114
+          ],
+          "median_ms": 1.707767,
+          "mean_ms": 1.7041720000000002,
+          "min_ms": 1.631901,
+          "max_ms": 1.793114
+        },
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "minio_s3",
+          "samples_ms": [
+            40.954567,
+            40.57387,
+            52.663321,
+            120.947294,
+            41.415548
+          ],
+          "median_ms": 41.415548,
+          "mean_ms": 59.310919999999996,
+          "min_ms": 40.57387,
+          "max_ms": 120.947294
+        }
+      ]
+    },
+    {
+      "name": "grep_nested_literal",
+      "description": "Search for a literal needle across 80 files with 20 matches.",
+      "operation": "grep",
+      "extra": {
+        "total_files": 80,
+        "matching_files": 20
+      },
+      "results": [
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "filesystem",
+          "samples_ms": [
+            16.350444,
+            12.153364,
+            13.539757,
+            13.532914,
+            13.547832
+          ],
+          "median_ms": 13.539757,
+          "mean_ms": 13.824862200000002,
+          "min_ms": 12.153364,
+          "max_ms": 16.350444
+        },
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "postgres",
+          "samples_ms": [
+            5.096469,
+            3.327472,
+            3.303797,
+            3.295702,
+            3.379868
+          ],
+          "median_ms": 3.327472,
+          "mean_ms": 3.6806615999999996,
+          "min_ms": 3.295702,
+          "max_ms": 5.096469
+        },
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "minio_s3",
+          "samples_ms": [
+            208.835329,
+            207.375887,
+            209.520003,
+            210.145174,
+            209.666608
+          ],
+          "median_ms": 209.520003,
+          "mean_ms": 209.1086002,
+          "min_ms": 207.375887,
+          "max_ms": 210.145174
+        }
+      ]
+    },
+    {
+      "name": "upload_binary_batch",
+      "description": "Upload a batch of 20 binary files (4 KiB each).",
+      "operation": "upload",
+      "extra": {
+        "files": 20,
+        "bytes_per_file": 4096
+      },
+      "results": [
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "filesystem",
+          "samples_ms": [
+            3.431554,
+            3.464284,
+            3.413881,
+            3.379436,
+            3.440961
+          ],
+          "median_ms": 3.431554,
+          "mean_ms": 3.4260232000000004,
+          "min_ms": 3.379436,
+          "max_ms": 3.464284
+        },
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "postgres",
+          "samples_ms": [
+            9.911746,
+            9.818022,
+            8.99729,
+            9.264162,
+            8.874674
+          ],
+          "median_ms": 9.264162,
+          "mean_ms": 9.3731788,
+          "min_ms": 8.874674,
+          "max_ms": 9.911746
+        },
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "minio_s3",
+          "samples_ms": [
+            88.551483,
+            87.806187,
+            89.491799,
+            89.83992,
+            89.829127
+          ],
+          "median_ms": 89.491799,
+          "mean_ms": 89.1037032,
+          "min_ms": 87.806187,
+          "max_ms": 89.83992
+        }
+      ]
+    },
+    {
+      "name": "download_binary_batch",
+      "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+      "operation": "download",
+      "extra": {
+        "files": 20,
+        "bytes_per_file": 4096
+      },
+      "results": [
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "filesystem",
+          "samples_ms": [
+            2.441299,
+            2.426782,
+            2.418997,
+            2.423786,
+            2.415531
+          ],
+          "median_ms": 2.423786,
+          "mean_ms": 2.425279,
+          "min_ms": 2.415531,
+          "max_ms": 2.441299
+        },
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "postgres",
+          "samples_ms": [
+            8.082483,
+            8.0316,
+            7.369719,
+            7.010367,
+            7.213613
+          ],
+          "median_ms": 7.369719,
+          "mean_ms": 7.541556399999999,
+          "min_ms": 7.010367,
+          "max_ms": 8.082483
+        },
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "minio_s3",
+          "samples_ms": [
+            70.115141,
+            70.157689,
+            84.311681,
+            69.717973,
+            69.471227
+          ],
+          "median_ms": 70.115141,
+          "mean_ms": 72.7547422,
+          "min_ms": 69.471227,
+          "max_ms": 84.311681
+        }
+      ]
+    }
+  ]
+}
