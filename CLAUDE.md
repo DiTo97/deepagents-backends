@@ -11,12 +11,12 @@ This repository currently supports these backends:
 
 Backend-specific details live in `wiki/`:
 
-- `wiki/S3.md`
-- `wiki/PostgreSQL.md`
-- `wiki/Azure-Blob.md`
-- `wiki/GCS.md`
-- `wiki/MongoDB.md`
-- `wiki/Redis-Valkey.md`
+- `wiki/s3.md`
+- `wiki/postgresql.md`
+- `wiki/azure-blob.md`
+- `wiki/gcs.md`
+- `wiki/mongodb.md`
+- `wiki/redis-valkey.md`
 
 Useful repository files:
 

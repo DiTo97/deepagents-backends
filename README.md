@@ -1,15 +1,8 @@
 # 🗄️ Deep Agents Remote Backends
 
-**deepagents-backends** provides remote `BackendProtocol` implementations for [LangChain Deep Agents](https://github.com/langchain-ai/deepagents), so agent file state can live outside local ephemeral storage.
+**deepagents-backends** provides production-ready implementations of the [LangChain Deep Agents](https://github.com/langchain-ai/deepagents)' `BackendProtocol` for remote file storage, allowing your agents to maintain state across restarts and share files in distributed environments.
 
-Supported backends:
-
-- S3 / MinIO
-- PostgreSQL
-- Azure Blob Storage / Azurite
-- Google Cloud Storage / fake-gcs-server
-- MongoDB
-- Redis / Valkey
+Store agent files in **S3**, **PostgreSQL**, **Azure Blob**, **GCS**, **MongoDB**, or **Redis/Valkey** instead of ephemeral state, enabling persistent storage, distributed execution, and multi-agent file sharing.
 
 ## 🚀 Install
 
@@ -27,61 +20,368 @@ uv sync
 
 | Backend | Best fit | Docs |
 |---|---|---|
-| S3Backend | Object storage, blobs, shared assets | [wiki/S3.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/S3.md) |
-| PostgresBackend | Relational persistence with pooling | [wiki/PostgreSQL.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/PostgreSQL.md) |
-| AzureBlobBackend | Azure-native blob storage | [wiki/Azure-Blob.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/Azure-Blob.md) |
-| GCSBackend | Google Cloud Storage-compatible object storage | [wiki/GCS.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/GCS.md) |
-| MongoDBBackend | Document-oriented persistence | [wiki/MongoDB.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/MongoDB.md) |
-| RedisBackend | Fast key-value persistence / Valkey | [wiki/Redis-Valkey.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/Redis-Valkey.md) |
-| All backend docs | Index page | [wiki/README.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/README.md) |
+| S3Backend | Object storage, blobs, shared assets | [wiki/s3.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/s3.md) |
+| PostgresBackend | Relational persistence with pooling | [wiki/postgresql.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/postgresql.md) |
+| AzureBlobBackend | Azure-native blob storage | [wiki/azure-blob.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/azure-blob.md) |
+| GCSBackend | Google Cloud Storage-compatible object storage | [wiki/gcs.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/gcs.md) |
+| MongoDBBackend | Document-oriented persistence | [wiki/mongodb.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/mongodb.md) |
+| RedisBackend | Fast key-value persistence / Valkey | [wiki/redis-valkey.md](https://github.com/DiTo97/deepagents-backends/blob/main/wiki/redis-valkey.md) |
 
 ## ⚡ Quickstart
 
 ### S3 / MinIO
 
-```python
-from deepagents_backends import S3Backend, S3Config
+Store agent files in AWS S3 or any S3-compatible storage (MinIO, DigitalOcean Spaces, etc.):
 
-backend = S3Backend(
-    S3Config(
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from deepagents_backends import S3Backend, S3Config
+from langchain_anthropic import ChatAnthropic
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def main():
+    config = S3Config(
         bucket="my-agent-bucket",
         prefix="agent-workspace",
-        endpoint_url="http://localhost:9000",
+        endpoint_url="http://localhost:9000",  # remove for AWS S3
         access_key_id="minioadmin",
         secret_access_key="minioadmin",
         use_ssl=False,
     )
-)
+
+    agent = create_deep_agent(
+        model=create_model(),
+        backend=S3Backend(config),
+        system_prompt="You are a helpful assistant. Files persist in S3.",
+    )
+
+    result = await agent.ainvoke({
+        "messages": [{"role": "user", "content": "Create a Python calculator module in /src/"}]
+    })
+    print(result)
+
+
+asyncio.run(main())
 ```
 
 ### PostgreSQL
 
+Store agent files in PostgreSQL with connection pooling for high-performance scenarios:
+
 ```python
+import asyncio
+import sys
+
+from deepagents import create_deep_agent
 from deepagents_backends import PostgresBackend, PostgresConfig
+from langchain_anthropic import ChatAnthropic
 
-backend = PostgresBackend(
-    PostgresConfig(
-        host="localhost",
-        port=5432,
-        database="deepagents",
-        user="postgres",
-        password="postgres",
-        table="agent_files",
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
     )
-)
 
-await backend.initialize()
-try:
-    ...
-finally:
-    await backend.close()
+
+async def main():
+    backend = PostgresBackend(
+        PostgresConfig(
+            host="localhost",
+            port=5432,
+            database="deepagents",
+            user="postgres",
+            password="postgres",
+            table="agent_files",
+        )
+    )
+    await backend.initialize()
+
+    try:
+        agent = create_deep_agent(
+            model=create_model(),
+            backend=backend,
+            system_prompt="You are a data analyst. Files persist in PostgreSQL.",
+        )
+
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Create a data analysis project in /analysis/"}]
+        })
+        print(result)
+    finally:
+        await backend.close()
+
+
+asyncio.run(main())
 ```
 
-For Azure Blob, GCS, MongoDB, and Redis/Valkey examples and lifecycle details, use the wiki pages above.
+### Azure Blob Storage
+
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from deepagents_backends import AzureBlobBackend, AzureBlobConfig
+from langchain_anthropic import ChatAnthropic
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def main():
+    backend = AzureBlobBackend(
+        AzureBlobConfig(
+            container="agent-files",
+            prefix="agent-workspace",
+            connection_string="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;",
+        )
+    )
+    await backend.ensure_container()
+
+    try:
+        agent = create_deep_agent(
+            model=create_model(),
+            backend=backend,
+            system_prompt="You are a helpful assistant. Files persist in Azure Blob.",
+        )
+
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Set up a project scaffold in /src/"}]
+        })
+        print(result)
+    finally:
+        await backend.close()
+
+
+asyncio.run(main())
+```
+
+### Google Cloud Storage
+
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from deepagents_backends import GCSBackend, GCSConfig
+from langchain_anthropic import ChatAnthropic
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def main():
+    backend = GCSBackend(
+        GCSConfig(
+            bucket="my-agent-bucket",
+            prefix="agent-workspace",
+            service_file="/path/to/service-account.json",  # omit to use ADC
+        )
+    )
+
+    try:
+        agent = create_deep_agent(
+            model=create_model(),
+            backend=backend,
+            system_prompt="You are a helpful assistant. Files persist in GCS.",
+        )
+
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Create a Python calculator module in /src/"}]
+        })
+        print(result)
+    finally:
+        await backend.close()
+
+
+asyncio.run(main())
+```
+
+### MongoDB
+
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from deepagents_backends import MongoDBBackend, MongoDBConfig
+from langchain_anthropic import ChatAnthropic
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def main():
+    backend = MongoDBBackend(
+        MongoDBConfig(
+            connection_uri="mongodb://localhost:27017",
+            database="deepagents",
+            collection="agent_files",
+        )
+    )
+    await backend.initialize()
+
+    try:
+        agent = create_deep_agent(
+            model=create_model(),
+            backend=backend,
+            system_prompt="You are a helpful assistant. Files persist in MongoDB.",
+        )
+
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Create a project structure in /src/"}]
+        })
+        print(result)
+    finally:
+        await backend.close()
+
+
+asyncio.run(main())
+```
+
+### Redis / Valkey
+
+```python
+import asyncio
+
+from deepagents import create_deep_agent
+from deepagents_backends import RedisBackend, RedisConfig
+from langchain_anthropic import ChatAnthropic
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def main():
+    backend = RedisBackend(
+        RedisConfig(
+            url="redis://localhost:6379/0",
+            namespace="deepagents",
+            prefix="agent-workspace",
+        )
+    )
+
+    try:
+        agent = create_deep_agent(
+            model=create_model(),
+            backend=backend,
+            system_prompt="You are a helpful assistant. Files persist in Redis.",
+        )
+
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Create a Python calculator module in /src/"}]
+        })
+        print(result)
+    finally:
+        await backend.close()
+
+
+asyncio.run(main())
+```
+
+## 🔀 Composite Backend (Hybrid Storage)
+
+Route different paths to different backends for optimal storage:
+
+```python
+import asyncio
+import sys
+
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend
+from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+from langchain_anthropic import ChatAnthropic
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def create_model() -> ChatAnthropic:
+    return ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=20000,
+        betas=["prompt-caching-2024-07-31"],
+    )
+
+
+async def main():
+    s3_backend = S3Backend(
+        S3Config(
+            bucket="my-asset-bucket",
+            prefix="agent-assets",
+            region="us-east-1",
+        )
+    )
+    pg_backend = PostgresBackend(
+        PostgresConfig(
+            host="localhost",
+            port=5432,
+            database="deepagents",
+            user="postgres",
+            password="postgres",
+            table="agent_files",
+        )
+    )
+    await pg_backend.initialize()
+
+    try:
+        agent = create_deep_agent(
+            model=create_model(),
+            backend=lambda runtime: CompositeBackend(
+                default=StateBackend(runtime),
+                routes={
+                    "/assets/": s3_backend,
+                    "/data/": pg_backend,
+                    "/memories/": pg_backend,
+                },
+            ),
+        )
+
+        await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Set up a hybrid workspace under /assets and /data."}]
+        })
+    finally:
+        await pg_backend.close()
+
+
+asyncio.run(main())
+```
 
 ## 🔧 Backend protocol coverage
 
-All backends implement:
+All backends implement the full `BackendProtocol` with sync and async methods:
 
 | Method | Description |
 |---|---|
@@ -96,7 +396,7 @@ All backends implement:
 
 ### Storage format
 
-Text-oriented files are stored as JSON with line arrays:
+Text-oriented files are stored as JSON with line arrays for efficient line-based operations:
 
 ```json
 {
@@ -106,24 +406,34 @@ Text-oriented files are stored as JSON with line arrays:
 }
 ```
 
-## 📚 Repository resources
-
-| Resource | Link |
-|---|---|
-| Source module | [src/deepagents_backends/__init__.py](https://github.com/DiTo97/deepagents-backends/blob/main/src/deepagents_backends/__init__.py) |
-| Docker services | [docker-compose.yml](https://github.com/DiTo97/deepagents-backends/blob/main/docker-compose.yml) |
-| Benchmark report | [benchmark/README.md](https://github.com/DiTo97/deepagents-backends/blob/main/benchmark/README.md) |
-| Benchmark JSON results | [benchmark/results/latest.json](https://github.com/DiTo97/deepagents-backends/blob/main/benchmark/results/latest.json) |
-| Contributor notes | [CLAUDE.md](https://github.com/DiTo97/deepagents-backends/blob/main/CLAUDE.md) |
-
 ## 📚 Examples
+
+See the [examples/](https://github.com/DiTo97/deepagents-backends/blob/main/examples/) directory for complete, runnable examples:
 
 | Example | Description |
 |---|---|
 | [examples/s3_deep_agent.py](https://github.com/DiTo97/deepagents-backends/blob/main/examples/s3_deep_agent.py) | Full S3 backend with streaming and custom tools |
-| [examples/postgres_deep_agent.py](https://github.com/DiTo97/deepagents-backends/blob/main/examples/postgres_deep_agent.py) | PostgreSQL with multi-agent workflows |
-| [examples/composite_backend.py](https://github.com/DiTo97/deepagents-backends/blob/main/examples/composite_backend.py) | Hybrid S3 + PostgreSQL routing |
+| [examples/postgres_deep_agent.py](https://github.com/DiTo97/deepagents-backends/blob/main/examples/postgres_deep_agent.py) | PostgreSQL with multi-agent and sub-agent workflows |
+| [examples/composite_backend.py](https://github.com/DiTo97/deepagents-backends/blob/main/examples/composite_backend.py) | Hybrid S3 + PostgreSQL storage with routing |
 | [examples/basic_usage.py](https://github.com/DiTo97/deepagents-backends/blob/main/examples/basic_usage.py) | Low-level backend API operations |
+
+### Running examples locally
+
+```bash
+# Start all local services
+docker-compose up -d
+
+# Run an example
+uv run examples/s3_deep_agent.py
+```
+
+## 📊 Benchmarks
+
+Latency benchmarks across all backends (filesystem baseline vs. remote backends) live in [`benchmark/`](https://github.com/DiTo97/deepagents-backends/blob/main/benchmark/README.md). Results are regenerated by running:
+
+```bash
+uv run python benchmark/run.py --manage-services --write-readme
+```
 
 ## 🧪 Development
 
@@ -131,10 +441,10 @@ Text-oriented files are stored as JSON with line arrays:
 # Install dependencies
 uv sync
 
-# Unit tests
+# Unit tests (mocked, no Docker)
 uv run pytest -m unit
 
-# Integration tests
+# Integration tests (Docker services started automatically)
 uv run pytest -m integration
 
 # Backend-specific integration subsets
@@ -145,9 +455,6 @@ uv run pytest -m "integration and redis"
 
 # Lint
 uv run ruff check .
-
-# Benchmarks
-uv run python benchmark/run.py --manage-services --write-readme
 ```
 
 ### Local Docker services
@@ -166,7 +473,7 @@ uv run python benchmark/run.py --manage-services --write-readme
 
 - Prefer environment variables, IAM roles, managed identities, or workload identity instead of hard-coded credentials.
 - Use TLS in production (`use_ssl=True`, `sslmode="require"`, HTTPS endpoints).
-- `PostgresBackend`, `MongoDBBackend`, and `RedisBackend` keep network clients open; close them cleanly when lifecycle methods require it.
+- `PostgresBackend`, `MongoDBBackend`, and `RedisBackend` hold open connections; always call `close()` when done.
 
 ## 📄 License
 
