@@ -9,6 +9,8 @@ import shutil
 import statistics
 import subprocess
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -17,7 +19,20 @@ from typing import Any, Protocol
 import aioboto3
 from deepagents.backends import FilesystemBackend
 
-from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+from deepagents_backends import (
+    AzureBlobBackend,
+    AzureBlobConfig,
+    GCSBackend,
+    GCSConfig,
+    MongoDBBackend,
+    MongoDBConfig,
+    PostgresBackend,
+    PostgresConfig,
+    RedisBackend,
+    RedisConfig,
+    S3Backend,
+    S3Config,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_DIR = REPO_ROOT / "benchmark"
@@ -31,6 +46,23 @@ POSTGRES_PORT = 5432
 POSTGRES_DATABASE = "deepagents_test"
 POSTGRES_USER = "postgres"
 POSTGRES_PASSWORD = "postgres"
+AZURITE_ACCOUNT_NAME = "devstoreaccount1"
+AZURITE_ACCOUNT_KEY = (
+    "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+    "K1SZFPTOtr/KBHBeksoGMGw=="
+)
+AZURE_BLOB_CONNECTION_STRING = (
+    "DefaultEndpointsProtocol=http;"
+    f"AccountName={AZURITE_ACCOUNT_NAME};"
+    f"AccountKey={AZURITE_ACCOUNT_KEY};"
+    f"BlobEndpoint=http://127.0.0.1:10000/{AZURITE_ACCOUNT_NAME};"
+)
+AZURE_CONTAINER = "benchmark-container"
+GCS_API_ROOT = "http://127.0.0.1:4443"
+GCS_BUCKET = "benchmark-bucket"
+MONGODB_URI = "mongodb://127.0.0.1:27017"
+MONGODB_DATABASE = "deepagents_benchmark"
+REDIS_URL = "redis://127.0.0.1:6379/0"
 WARMUP_RUNS = 1
 MEASURED_RUNS = 5
 MATCH_NEEDLE = "BENCHMARK_MATCH_NEEDLE_9fC3"
@@ -364,6 +396,284 @@ class PostgresAdapter:
         return [response.content or b"" for response in responses]
 
 
+class AzureBlobAdapter:
+    """Adapter for the Azurite-backed Azure Blob backend."""
+
+    name = "azure_blob"
+
+    def __init__(self, prefix: str) -> None:
+        self.backend = AzureBlobBackend(
+            AzureBlobConfig(
+                container=AZURE_CONTAINER,
+                prefix=prefix,
+                connection_string=AZURE_BLOB_CONNECTION_STRING,
+            )
+        )
+
+    def setup(self) -> None:
+        asyncio.run(self.backend.ensure_container())
+
+    def teardown(self) -> None:
+        asyncio.run(self.backend.close())
+
+    def write_text(self, path: str, content: str) -> None:
+        result = self.backend.write(path, content)
+        if result.error:
+            raise RuntimeError(result.error)
+
+    def read_text(self, path: str) -> str:
+        result = self.backend.read(path)
+        if result.startswith("Error:"):
+            raise RuntimeError(result)
+        return result
+
+    def edit_text(self, path: str, old: str, new: str) -> int:
+        result = self.backend.edit(path, old, new)
+        if result.error:
+            raise RuntimeError(result.error)
+        return int(result.occurrences or 0)
+
+    def list_entries(self, path: str) -> list[dict[str, Any]]:
+        return self.backend.ls_info(path)
+
+    def glob_paths(self, pattern: str, path: str) -> list[dict[str, Any]]:
+        return self.backend.glob_info(pattern, path)
+
+    def grep_matches(
+        self, pattern: str, path: str, glob_pattern: str | None = None
+    ) -> list[dict[str, Any]]:
+        result = self.backend.grep_raw(pattern, path, glob_pattern)
+        if isinstance(result, str):
+            raise RuntimeError(result)
+        return list(result)
+
+    def upload_bytes(self, files: list[tuple[str, bytes]]) -> None:
+        responses = self.backend.upload_files(files)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+
+    def download_bytes(self, paths: list[str]) -> list[bytes]:
+        responses = self.backend.download_files(paths)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+        return [response.content or b"" for response in responses]
+
+
+class GCSAdapter:
+    """Adapter for the fake-gcs-server-backed GCS backend."""
+
+    name = "gcs"
+
+    def __init__(self, prefix: str) -> None:
+        self.backend = GCSBackend(
+            GCSConfig(
+                bucket=GCS_BUCKET,
+                prefix=prefix,
+                api_root=GCS_API_ROOT,
+            )
+        )
+
+    def setup(self) -> None:
+        ensure_fake_gcs_bucket()
+
+    def teardown(self) -> None:
+        asyncio.run(self.backend.close())
+
+    def write_text(self, path: str, content: str) -> None:
+        result = self.backend.write(path, content)
+        if result.error:
+            raise RuntimeError(result.error)
+
+    def read_text(self, path: str) -> str:
+        result = self.backend.read(path)
+        if result.startswith("Error:"):
+            raise RuntimeError(result)
+        return result
+
+    def edit_text(self, path: str, old: str, new: str) -> int:
+        result = self.backend.edit(path, old, new)
+        if result.error:
+            raise RuntimeError(result.error)
+        return int(result.occurrences or 0)
+
+    def list_entries(self, path: str) -> list[dict[str, Any]]:
+        return self.backend.ls_info(path)
+
+    def glob_paths(self, pattern: str, path: str) -> list[dict[str, Any]]:
+        return self.backend.glob_info(pattern, path)
+
+    def grep_matches(
+        self, pattern: str, path: str, glob_pattern: str | None = None
+    ) -> list[dict[str, Any]]:
+        result = self.backend.grep_raw(pattern, path, glob_pattern)
+        if isinstance(result, str):
+            raise RuntimeError(result)
+        return list(result)
+
+    def upload_bytes(self, files: list[tuple[str, bytes]]) -> None:
+        responses = self.backend.upload_files(files)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+
+    def download_bytes(self, paths: list[str]) -> list[bytes]:
+        responses = self.backend.download_files(paths)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+        return [response.content or b"" for response in responses]
+
+
+class MongoDBAdapter:
+    """Adapter for the MongoDB backend."""
+
+    name = "mongodb"
+
+    def __init__(self, collection: str) -> None:
+        self.backend = MongoDBBackend(
+            MongoDBConfig(
+                connection_uri=MONGODB_URI,
+                database=MONGODB_DATABASE,
+                collection=collection,
+            )
+        )
+
+    def setup(self) -> None:
+        asyncio.run(self.backend.initialize())
+
+    def teardown(self) -> None:
+        async def cleanup() -> None:
+            collection = await self.backend._ensure_collection()
+            await collection.drop()
+            await self.backend.close()
+
+        asyncio.run(cleanup())
+
+    def write_text(self, path: str, content: str) -> None:
+        result = self.backend.write(path, content)
+        if result.error:
+            raise RuntimeError(result.error)
+
+    def read_text(self, path: str) -> str:
+        result = self.backend.read(path)
+        if result.startswith("Error:"):
+            raise RuntimeError(result)
+        return result
+
+    def edit_text(self, path: str, old: str, new: str) -> int:
+        result = self.backend.edit(path, old, new)
+        if result.error:
+            raise RuntimeError(result.error)
+        return int(result.occurrences or 0)
+
+    def list_entries(self, path: str) -> list[dict[str, Any]]:
+        return self.backend.ls_info(path)
+
+    def glob_paths(self, pattern: str, path: str) -> list[dict[str, Any]]:
+        return self.backend.glob_info(pattern, path)
+
+    def grep_matches(
+        self, pattern: str, path: str, glob_pattern: str | None = None
+    ) -> list[dict[str, Any]]:
+        result = self.backend.grep_raw(pattern, path, glob_pattern)
+        if isinstance(result, str):
+            raise RuntimeError(result)
+        return list(result)
+
+    def upload_bytes(self, files: list[tuple[str, bytes]]) -> None:
+        responses = self.backend.upload_files(files)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+
+    def download_bytes(self, paths: list[str]) -> list[bytes]:
+        responses = self.backend.download_files(paths)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+        return [response.content or b"" for response in responses]
+
+
+class RedisAdapter:
+    """Adapter for the Redis/Valkey backend."""
+
+    name = "redis"
+
+    def __init__(self, namespace: str, prefix: str) -> None:
+        self.backend = RedisBackend(
+            RedisConfig(
+                url=REDIS_URL,
+                namespace=namespace,
+                prefix=prefix,
+            )
+        )
+
+    def setup(self) -> None:
+        return None
+
+    def teardown(self) -> None:
+        async def cleanup() -> None:
+            client = await self.backend._ensure_client()
+            members = await client.smembers(self.backend._index_key)
+            data_keys = []
+            for member in members:
+                if isinstance(member, bytes):
+                    member = member.decode("utf-8")
+                data_keys.append(f"{self.backend._namespace}:file:{member}")
+            if data_keys:
+                await client.delete(*data_keys)
+            await client.delete(self.backend._index_key)
+            await self.backend.close()
+
+        asyncio.run(cleanup())
+
+    def write_text(self, path: str, content: str) -> None:
+        result = self.backend.write(path, content)
+        if result.error:
+            raise RuntimeError(result.error)
+
+    def read_text(self, path: str) -> str:
+        result = self.backend.read(path)
+        if result.startswith("Error:"):
+            raise RuntimeError(result)
+        return result
+
+    def edit_text(self, path: str, old: str, new: str) -> int:
+        result = self.backend.edit(path, old, new)
+        if result.error:
+            raise RuntimeError(result.error)
+        return int(result.occurrences or 0)
+
+    def list_entries(self, path: str) -> list[dict[str, Any]]:
+        return self.backend.ls_info(path)
+
+    def glob_paths(self, pattern: str, path: str) -> list[dict[str, Any]]:
+        return self.backend.glob_info(pattern, path)
+
+    def grep_matches(
+        self, pattern: str, path: str, glob_pattern: str | None = None
+    ) -> list[dict[str, Any]]:
+        result = self.backend.grep_raw(pattern, path, glob_pattern)
+        if isinstance(result, str):
+            raise RuntimeError(result)
+        return list(result)
+
+    def upload_bytes(self, files: list[tuple[str, bytes]]) -> None:
+        responses = self.backend.upload_files(files)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+
+    def download_bytes(self, paths: list[str]) -> list[bytes]:
+        responses = self.backend.download_files(paths)
+        errors = [response for response in responses if response.error]
+        if errors:
+            raise RuntimeError(str(errors))
+        return [response.content or b"" for response in responses]
+
+
 async def ensure_minio_bucket() -> None:
     """Create the benchmark bucket if needed."""
 
@@ -383,6 +693,23 @@ async def ensure_minio_bucket() -> None:
             return
         except s3.exceptions.BucketAlreadyExists:
             return
+
+
+def ensure_fake_gcs_bucket() -> None:
+    """Create the fake-gcs-server benchmark bucket if needed."""
+    request = urllib.request.Request(
+        f"{GCS_API_ROOT}/storage/v1/b?project=benchmark-project",
+        data=json.dumps({"name": GCS_BUCKET}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5):
+            return
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            return
+        raise
 
 
 def run_compose(*args: str) -> None:
@@ -581,6 +908,10 @@ def build_backend_adapters(run_id: str) -> list[BenchmarkBackend]:
         FilesystemAdapter(Path("/tmp") / "deepagents-backends-benchmark" / run_id / "filesystem"),
         PostgresAdapter(f"benchmark_{table_suffix}"),
         S3Adapter(f"benchmark/{run_id}/minio"),
+        AzureBlobAdapter(f"benchmark/{run_id}/azure"),
+        GCSAdapter(f"benchmark/{run_id}/gcs"),
+        MongoDBAdapter(f"benchmark_{table_suffix}_mongo"),
+        RedisAdapter(f"benchmark-{table_suffix}-redis", f"benchmark/{run_id}/redis"),
     ]
 
 
@@ -635,7 +966,7 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
     lines = [
         "# Benchmark Results",
         "",
-        "This folder contains a reproducible benchmark for three file-oriented backends:",
+        "This folder contains a reproducible benchmark for seven file-oriented backends:",
         "",
         (
             "- `FilesystemBackend` from `deepagents`, scoped to a dedicated root "
@@ -643,6 +974,10 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
         ),
         "- `PostgresBackend` from this repository, backed by Dockerized PostgreSQL.",
         "- `S3Backend` from this repository, backed by Dockerized MinIO.",
+        "- `AzureBlobBackend` from this repository, backed by Dockerized Azurite.",
+        "- `GCSBackend` from this repository, backed by Dockerized fake-gcs-server.",
+        "- `MongoDBBackend` from this repository, backed by Dockerized MongoDB.",
+        "- `RedisBackend` from this repository, backed by Dockerized Valkey.",
         "",
         "## How to run",
         "",
@@ -665,6 +1000,10 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
             "- PostgreSQL uses a dedicated benchmark table per run; MinIO uses "
             "a dedicated object prefix per run."
         ),
+        (
+            "- Azure Blob, GCS, and Redis use dedicated prefixes/namespaces per run; "
+            "MongoDB uses a dedicated collection per run."
+        ),
         "",
         "## Environment",
         "",
@@ -676,29 +1015,45 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
         "",
         "## Median latency by scenario",
         "",
-        "| Scenario | Filesystem (ms) | PostgreSQL (ms) | MinIO S3 (ms) | Fastest |",
-        "|---|---:|---:|---:|---|",
     ]
 
-    backend_order = ["filesystem", "postgres", "minio_s3"]
+    backend_order = [
+        "filesystem",
+        "postgres",
+        "minio_s3",
+        "azure_blob",
+        "gcs",
+        "mongodb",
+        "redis",
+    ]
     backend_labels = {
         "filesystem": "Filesystem",
         "postgres": "PostgreSQL",
         "minio_s3": "MinIO S3",
+        "azure_blob": "Azure Blob",
+        "gcs": "GCS",
+        "mongodb": "MongoDB",
+        "redis": "Redis/Valkey",
     }
+    lines.extend(
+        [
+            "| Scenario | "
+            + " | ".join(f"{backend_labels[backend]} (ms)" for backend in backend_order)
+            + " | Fastest |",
+            "|---|" + "|".join("---:" for _ in backend_order) + "|---|",
+        ]
+    )
     for scenario in scenarios:
         medians = {
             result["backend"]: result["median_ms"]
             for result in scenario["results"]
         }
         fastest_backend = min(medians, key=medians.get)
+        row = [f"`{scenario['name']}`"] + [
+            f"{medians[backend]:.3f}" for backend in backend_order
+        ] + [backend_labels[fastest_backend]]
         lines.append(
-            "| "
-            f"`{scenario['name']}` | "
-            f"{medians['filesystem']:.3f} | "
-            f"{medians['postgres']:.3f} | "
-            f"{medians['minio_s3']:.3f} | "
-            f"{backend_labels[fastest_backend]} |"
+            "| " + " | ".join(row) + " |"
         )
 
     lines.extend(
@@ -746,9 +1101,8 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
                 "as comparative, not absolute throughput guarantees."
             ),
             (
-                "- The built-in filesystem backend is fastest for local "
-                "single-host access, while PostgreSQL and MinIO trade latency "
-                "for remote persistence semantics."
+                "- The built-in filesystem backend remains the local baseline, "
+                "while the remote backends trade latency for different persistence semantics."
             ),
             f"- Raw machine-readable results live in `{payload['results_path']}`.",
             "",
@@ -833,7 +1187,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--manage-services",
         action="store_true",
-        help="Start and stop PostgreSQL and MinIO with docker compose.",
+        help="Start and stop the local benchmark services with docker compose.",
     )
     parser.add_argument(
         "--write-readme",
@@ -854,7 +1208,17 @@ def main() -> int:
     readme_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.manage_services:
-        run_compose("up", "-d", "--wait", "minio", "postgres")
+        run_compose(
+            "up",
+            "-d",
+            "--wait",
+            "minio",
+            "postgres",
+            "azurite",
+            "fake-gcs-server",
+            "mongodb",
+            "valkey",
+        )
 
     try:
         all_results: list[ScenarioResult] = []

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-16T16:02:52Z",
-  "run_id": "1126ebb3b067",
+  "generated_at": "2026-04-17T07:52:07Z",
+  "run_id": "fe082ffab75e",
   "warmup_runs": 1,
   "measured_runs": 5,
   "managed_services": true,
@@ -22,48 +22,112 @@
           "description": "Create a new 40-line text file in a nested directory.",
           "backend": "filesystem",
           "samples_ms": [
-            0.255917,
-            0.242111,
-            0.269903,
-            0.234617,
-            0.229969
+            0.266105,
+            0.222949,
+            0.214676,
+            0.331504,
+            0.303181
           ],
-          "median_ms": 0.242111,
-          "mean_ms": 0.2465034,
-          "min_ms": 0.229969,
-          "max_ms": 0.269903
+          "median_ms": 0.266105,
+          "mean_ms": 0.267683,
+          "min_ms": 0.214676,
+          "max_ms": 0.331504
         },
         {
           "scenario": "write_small_text",
           "description": "Create a new 40-line text file in a nested directory.",
           "backend": "postgres",
           "samples_ms": [
-            3.003544,
-            2.429897,
-            2.030144,
-            1.841131,
-            4.077596
+            3.079647,
+            2.578465,
+            2.254417,
+            2.159769,
+            1.936644
           ],
-          "median_ms": 2.429897,
-          "mean_ms": 2.6764624,
-          "min_ms": 1.841131,
-          "max_ms": 4.077596
+          "median_ms": 2.254417,
+          "mean_ms": 2.4017884,
+          "min_ms": 1.936644,
+          "max_ms": 3.079647
         },
         {
           "scenario": "write_small_text",
           "description": "Create a new 40-line text file in a nested directory.",
           "backend": "minio_s3",
           "samples_ms": [
-            59.491591,
-            60.899849,
-            59.089605,
-            60.743511,
-            68.278722
+            56.553826,
+            57.611403,
+            57.283523,
+            59.009529,
+            64.292198
           ],
-          "median_ms": 60.743511,
-          "mean_ms": 61.700655600000005,
-          "min_ms": 59.089605,
-          "max_ms": 68.278722
+          "median_ms": 57.611403,
+          "mean_ms": 58.9500958,
+          "min_ms": 56.553826,
+          "max_ms": 64.292198
+        },
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "azure_blob",
+          "samples_ms": [
+            11.146541,
+            10.865241,
+            10.145977,
+            11.485254,
+            8.081638
+          ],
+          "median_ms": 10.865241,
+          "mean_ms": 10.344930199999999,
+          "min_ms": 8.081638,
+          "max_ms": 11.485254
+        },
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "gcs",
+          "samples_ms": [
+            3.057538,
+            3.154662,
+            3.03923,
+            3.018243,
+            2.962587
+          ],
+          "median_ms": 3.03923,
+          "mean_ms": 3.046452,
+          "min_ms": 2.962587,
+          "max_ms": 3.154662
+        },
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "mongodb",
+          "samples_ms": [
+            5.957009,
+            6.080179,
+            5.933448,
+            5.897188,
+            5.945346
+          ],
+          "median_ms": 5.945346,
+          "mean_ms": 5.9626339999999995,
+          "min_ms": 5.897188,
+          "max_ms": 6.080179
+        },
+        {
+          "scenario": "write_small_text",
+          "description": "Create a new 40-line text file in a nested directory.",
+          "backend": "redis",
+          "samples_ms": [
+            2.23357,
+            2.181732,
+            3.331973,
+            2.164916,
+            3.205179
+          ],
+          "median_ms": 2.23357,
+          "mean_ms": 2.623474,
+          "min_ms": 2.164916,
+          "max_ms": 3.331973
         }
       ]
     },
@@ -80,48 +144,112 @@
           "description": "Read a pre-populated 200-line text file.",
           "backend": "filesystem",
           "samples_ms": [
-            0.180437,
-            0.180877,
-            0.172071,
-            0.180857,
-            0.176629
+            0.22347,
+            0.224281,
+            0.240906,
+            0.215798,
+            0.226835
           ],
-          "median_ms": 0.180437,
-          "mean_ms": 0.1781742,
-          "min_ms": 0.172071,
-          "max_ms": 0.180877
+          "median_ms": 0.224281,
+          "mean_ms": 0.226258,
+          "min_ms": 0.215798,
+          "max_ms": 0.240906
         },
         {
           "scenario": "read_medium_text",
           "description": "Read a pre-populated 200-line text file.",
           "backend": "postgres",
           "samples_ms": [
-            1.188885,
-            1.184928,
-            1.157446,
-            1.152496,
-            1.258404
+            1.168746,
+            1.090824,
+            1.122807,
+            1.114925,
+            1.438597
           ],
-          "median_ms": 1.184928,
-          "mean_ms": 1.1884318,
-          "min_ms": 1.152496,
-          "max_ms": 1.258404
+          "median_ms": 1.122807,
+          "mean_ms": 1.1871798,
+          "min_ms": 1.090824,
+          "max_ms": 1.438597
         },
         {
           "scenario": "read_medium_text",
           "description": "Read a pre-populated 200-line text file.",
           "backend": "minio_s3",
           "samples_ms": [
-            29.330949,
-            29.193615,
-            29.411167,
-            29.411428,
-            28.720486
+            39.184189,
+            37.947294,
+            27.724027,
+            28.297066,
+            36.778026
           ],
-          "median_ms": 29.330949,
-          "mean_ms": 29.213529,
-          "min_ms": 28.720486,
-          "max_ms": 29.411428
+          "median_ms": 36.778026,
+          "mean_ms": 33.9861204,
+          "min_ms": 27.724027,
+          "max_ms": 39.184189
+        },
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "azure_blob",
+          "samples_ms": [
+            4.611145,
+            4.763836,
+            5.052582,
+            4.346971,
+            4.309644
+          ],
+          "median_ms": 4.611145,
+          "mean_ms": 4.6168356,
+          "min_ms": 4.309644,
+          "max_ms": 5.052582
+        },
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "gcs",
+          "samples_ms": [
+            1.362049,
+            1.3433,
+            1.299623,
+            1.368194,
+            1.372606
+          ],
+          "median_ms": 1.362049,
+          "mean_ms": 1.3491544,
+          "min_ms": 1.299623,
+          "max_ms": 1.372606
+        },
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "mongodb",
+          "samples_ms": [
+            4.355789,
+            4.844507,
+            4.738854,
+            4.67742,
+            7.714955
+          ],
+          "median_ms": 4.738854,
+          "mean_ms": 5.266305,
+          "min_ms": 4.355789,
+          "max_ms": 7.714955
+        },
+        {
+          "scenario": "read_medium_text",
+          "description": "Read a pre-populated 200-line text file.",
+          "backend": "redis",
+          "samples_ms": [
+            3.186221,
+            1.874443,
+            1.797056,
+            1.724115,
+            1.713949
+          ],
+          "median_ms": 1.797056,
+          "mean_ms": 2.0591568000000002,
+          "min_ms": 1.713949,
+          "max_ms": 3.186221
         }
       ]
     },
@@ -138,48 +266,112 @@
           "description": "Replace one marker inside a pre-populated 200-line text file.",
           "backend": "filesystem",
           "samples_ms": [
-            0.222464,
-            0.216354,
-            0.212245,
-            0.213368,
-            0.236962
+            0.294517,
+            0.272575,
+            0.291854,
+            0.271463,
+            0.281478
           ],
-          "median_ms": 0.216354,
-          "mean_ms": 0.22027860000000002,
-          "min_ms": 0.212245,
-          "max_ms": 0.236962
+          "median_ms": 0.281478,
+          "mean_ms": 0.2823774,
+          "min_ms": 0.271463,
+          "max_ms": 0.294517
         },
         {
           "scenario": "edit_medium_text",
           "description": "Replace one marker inside a pre-populated 200-line text file.",
           "backend": "postgres",
           "samples_ms": [
-            2.218175,
-            2.207021,
-            2.189762,
-            2.253108,
-            2.491525
+            2.165177,
+            2.204651,
+            2.077172,
+            1.981172,
+            2.569921
           ],
-          "median_ms": 2.218175,
-          "mean_ms": 2.2719182,
-          "min_ms": 2.189762,
-          "max_ms": 2.491525
+          "median_ms": 2.165177,
+          "mean_ms": 2.1996186,
+          "min_ms": 1.981172,
+          "max_ms": 2.569921
         },
         {
           "scenario": "edit_medium_text",
           "description": "Replace one marker inside a pre-populated 200-line text file.",
           "backend": "minio_s3",
           "samples_ms": [
-            59.231872,
-            62.727246,
-            60.889741,
-            59.317616,
-            60.168359
+            64.928929,
+            57.034048,
+            56.037092,
+            56.977656,
+            57.088475
           ],
-          "median_ms": 60.168359,
-          "mean_ms": 60.4669668,
-          "min_ms": 59.231872,
-          "max_ms": 62.727246
+          "median_ms": 57.034048,
+          "mean_ms": 58.413239999999995,
+          "min_ms": 56.037092,
+          "max_ms": 64.928929
+        },
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "azure_blob",
+          "samples_ms": [
+            10.459415,
+            8.933283,
+            9.965588,
+            9.732036,
+            11.974269
+          ],
+          "median_ms": 9.965588,
+          "mean_ms": 10.2129182,
+          "min_ms": 8.933283,
+          "max_ms": 11.974269
+        },
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "gcs",
+          "samples_ms": [
+            3.213593,
+            3.065149,
+            3.145919,
+            3.217615,
+            3.315901
+          ],
+          "median_ms": 3.213593,
+          "mean_ms": 3.1916354,
+          "min_ms": 3.065149,
+          "max_ms": 3.315901
+        },
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "mongodb",
+          "samples_ms": [
+            5.731682,
+            6.143862,
+            5.961176,
+            5.987621,
+            6.112158
+          ],
+          "median_ms": 5.987621,
+          "mean_ms": 5.987299800000001,
+          "min_ms": 5.731682,
+          "max_ms": 6.143862
+        },
+        {
+          "scenario": "edit_medium_text",
+          "description": "Replace one marker inside a pre-populated 200-line text file.",
+          "backend": "redis",
+          "samples_ms": [
+            2.272334,
+            2.180765,
+            2.09273,
+            2.230506,
+            2.452483
+          ],
+          "median_ms": 2.230506,
+          "mean_ms": 2.2457636,
+          "min_ms": 2.09273,
+          "max_ms": 2.452483
         }
       ]
     },
@@ -196,48 +388,112 @@
           "description": "List a directory containing 100 direct child files.",
           "backend": "filesystem",
           "samples_ms": [
-            11.01329,
-            10.968587,
-            10.969839,
-            10.920106,
-            11.121422
+            10.303492,
+            11.097059,
+            10.098421,
+            10.094304,
+            10.074395
           ],
-          "median_ms": 10.969839,
-          "mean_ms": 10.998648800000002,
-          "min_ms": 10.920106,
-          "max_ms": 11.121422
+          "median_ms": 10.098421,
+          "mean_ms": 10.333534199999999,
+          "min_ms": 10.074395,
+          "max_ms": 11.097059
         },
         {
           "scenario": "ls_flat_directory",
           "description": "List a directory containing 100 direct child files.",
           "backend": "postgres",
           "samples_ms": [
-            2.0395,
-            2.200142,
-            2.157731,
-            2.176044,
-            2.673222
+            2.320292,
+            2.296251,
+            2.293576,
+            2.505338,
+            2.945032
           ],
-          "median_ms": 2.176044,
-          "mean_ms": 2.2493278,
-          "min_ms": 2.0395,
-          "max_ms": 2.673222
+          "median_ms": 2.320292,
+          "mean_ms": 2.4720978,
+          "min_ms": 2.293576,
+          "max_ms": 2.945032
         },
         {
           "scenario": "ls_flat_directory",
           "description": "List a directory containing 100 direct child files.",
           "backend": "minio_s3",
           "samples_ms": [
-            41.090732,
-            121.116311,
-            40.800779,
-            40.708393,
-            43.10825
+            38.91468,
+            37.180251,
+            37.042934,
+            37.323415,
+            43.229273
           ],
-          "median_ms": 41.090732,
-          "mean_ms": 57.364892999999995,
-          "min_ms": 40.708393,
-          "max_ms": 121.116311
+          "median_ms": 37.323415,
+          "mean_ms": 38.7381106,
+          "min_ms": 37.042934,
+          "max_ms": 43.229273
+        },
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "azure_blob",
+          "samples_ms": [
+            45.808617,
+            37.221741,
+            43.537964,
+            27.326278,
+            130.240324
+          ],
+          "median_ms": 43.537964,
+          "mean_ms": 56.826984800000005,
+          "min_ms": 27.326278,
+          "max_ms": 130.240324
+        },
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "gcs",
+          "samples_ms": [
+            8.802341,
+            11.194093,
+            10.900809,
+            11.882055,
+            12.469408
+          ],
+          "median_ms": 11.194093,
+          "mean_ms": 11.0497412,
+          "min_ms": 8.802341,
+          "max_ms": 12.469408
+        },
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "mongodb",
+          "samples_ms": [
+            9.166213,
+            5.827741,
+            8.298984,
+            5.846596,
+            6.123643
+          ],
+          "median_ms": 6.123643,
+          "mean_ms": 7.0526354,
+          "min_ms": 5.827741,
+          "max_ms": 9.166213
+        },
+        {
+          "scenario": "ls_flat_directory",
+          "description": "List a directory containing 100 direct child files.",
+          "backend": "redis",
+          "samples_ms": [
+            4.096196,
+            4.28649,
+            4.454692,
+            4.533923,
+            4.974128
+          ],
+          "median_ms": 4.454692,
+          "mean_ms": 4.4690858,
+          "min_ms": 4.096196,
+          "max_ms": 4.974128
         }
       ]
     },
@@ -256,48 +512,112 @@
           "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
           "backend": "filesystem",
           "samples_ms": [
-            13.025259,
-            12.981056,
-            12.959426,
-            12.985524,
-            12.96661
+            12.094636,
+            12.134056,
+            12.080194,
+            12.36094,
+            11.980702
           ],
-          "median_ms": 12.981056,
-          "mean_ms": 12.983574999999998,
-          "min_ms": 12.959426,
-          "max_ms": 13.025259
+          "median_ms": 12.094636,
+          "mean_ms": 12.1301056,
+          "min_ms": 11.980702,
+          "max_ms": 12.36094
         },
         {
           "scenario": "glob_nested_python",
           "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
           "backend": "postgres",
           "samples_ms": [
-            1.631901,
-            1.735678,
-            1.707767,
-            1.6524,
-            1.793114
+            2.044668,
+            1.74366,
+            1.734586,
+            1.70769,
+            1.818895
           ],
-          "median_ms": 1.707767,
-          "mean_ms": 1.7041720000000002,
-          "min_ms": 1.631901,
-          "max_ms": 1.793114
+          "median_ms": 1.74366,
+          "mean_ms": 1.8098998000000002,
+          "min_ms": 1.70769,
+          "max_ms": 2.044668
         },
         {
           "scenario": "glob_nested_python",
           "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
           "backend": "minio_s3",
           "samples_ms": [
-            40.954567,
-            40.57387,
-            52.663321,
-            120.947294,
-            41.415548
+            38.038669,
+            37.731841,
+            38.703187,
+            36.321449,
+            36.593828
           ],
-          "median_ms": 41.415548,
-          "mean_ms": 59.310919999999996,
-          "min_ms": 40.57387,
-          "max_ms": 120.947294
+          "median_ms": 37.731841,
+          "mean_ms": 37.477794800000005,
+          "min_ms": 36.321449,
+          "max_ms": 38.703187
+        },
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "azure_blob",
+          "samples_ms": [
+            23.030443,
+            23.298757,
+            24.137148,
+            26.699593,
+            23.263832
+          ],
+          "median_ms": 23.298757,
+          "mean_ms": 24.0859546,
+          "min_ms": 23.030443,
+          "max_ms": 26.699593
+        },
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "gcs",
+          "samples_ms": [
+            14.856892,
+            16.308501,
+            20.913761,
+            17.105244,
+            19.136885
+          ],
+          "median_ms": 17.105244,
+          "mean_ms": 17.664256599999998,
+          "min_ms": 14.856892,
+          "max_ms": 20.913761
+        },
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "mongodb",
+          "samples_ms": [
+            7.641304,
+            5.116724,
+            6.247505,
+            6.235511,
+            5.142119
+          ],
+          "median_ms": 6.235511,
+          "mean_ms": 6.0766326,
+          "min_ms": 5.116724,
+          "max_ms": 7.641304
+        },
+        {
+          "scenario": "glob_nested_python",
+          "description": "Glob for Python files inside a 5x12 nested tree plus 25 non-matches.",
+          "backend": "redis",
+          "samples_ms": [
+            5.831408,
+            5.851102,
+            6.003851,
+            6.424116,
+            7.039195
+          ],
+          "median_ms": 6.003851,
+          "mean_ms": 6.229934399999999,
+          "min_ms": 5.831408,
+          "max_ms": 7.039195
         }
       ]
     },
@@ -315,48 +635,112 @@
           "description": "Search for a literal needle across 80 files with 20 matches.",
           "backend": "filesystem",
           "samples_ms": [
-            16.350444,
-            12.153364,
-            13.539757,
-            13.532914,
-            13.547832
+            10.198984,
+            10.356013,
+            10.136569,
+            10.061605,
+            11.131031
           ],
-          "median_ms": 13.539757,
-          "mean_ms": 13.824862200000002,
-          "min_ms": 12.153364,
-          "max_ms": 16.350444
+          "median_ms": 10.198984,
+          "mean_ms": 10.3768404,
+          "min_ms": 10.061605,
+          "max_ms": 11.131031
         },
         {
           "scenario": "grep_nested_literal",
           "description": "Search for a literal needle across 80 files with 20 matches.",
           "backend": "postgres",
           "samples_ms": [
-            5.096469,
-            3.327472,
-            3.303797,
-            3.295702,
-            3.379868
+            4.700721,
+            3.122307,
+            3.01932,
+            3.201051,
+            3.670535
           ],
-          "median_ms": 3.327472,
-          "mean_ms": 3.6806615999999996,
-          "min_ms": 3.295702,
-          "max_ms": 5.096469
+          "median_ms": 3.201051,
+          "mean_ms": 3.5427868000000005,
+          "min_ms": 3.01932,
+          "max_ms": 4.700721
         },
         {
           "scenario": "grep_nested_literal",
           "description": "Search for a literal needle across 80 files with 20 matches.",
           "backend": "minio_s3",
           "samples_ms": [
-            208.835329,
-            207.375887,
-            209.520003,
-            210.145174,
-            209.666608
+            205.850534,
+            205.840398,
+            208.327206,
+            204.250783,
+            206.405821
           ],
-          "median_ms": 209.520003,
-          "mean_ms": 209.1086002,
-          "min_ms": 207.375887,
-          "max_ms": 210.145174
+          "median_ms": 205.850534,
+          "mean_ms": 206.13494839999998,
+          "min_ms": 204.250783,
+          "max_ms": 208.327206
+        },
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "azure_blob",
+          "samples_ms": [
+            292.454289,
+            282.466529,
+            260.971448,
+            280.130003,
+            259.710314
+          ],
+          "median_ms": 280.130003,
+          "mean_ms": 275.1465166,
+          "min_ms": 259.710314,
+          "max_ms": 292.454289
+        },
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "gcs",
+          "samples_ms": [
+            72.262263,
+            73.451654,
+            73.849336,
+            75.184171,
+            79.051453
+          ],
+          "median_ms": 73.849336,
+          "mean_ms": 74.7597754,
+          "min_ms": 72.262263,
+          "max_ms": 79.051453
+        },
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "mongodb",
+          "samples_ms": [
+            6.890448,
+            10.99401,
+            10.329628,
+            9.148518,
+            10.230975
+          ],
+          "median_ms": 10.230975,
+          "mean_ms": 9.518715799999999,
+          "min_ms": 6.890448,
+          "max_ms": 10.99401
+        },
+        {
+          "scenario": "grep_nested_literal",
+          "description": "Search for a literal needle across 80 files with 20 matches.",
+          "backend": "redis",
+          "samples_ms": [
+            29.217492,
+            28.666751,
+            29.155673,
+            30.248537,
+            31.251047
+          ],
+          "median_ms": 29.217492,
+          "mean_ms": 29.707900000000002,
+          "min_ms": 28.666751,
+          "max_ms": 31.251047
         }
       ]
     },
@@ -374,48 +758,112 @@
           "description": "Upload a batch of 20 binary files (4 KiB each).",
           "backend": "filesystem",
           "samples_ms": [
-            3.431554,
-            3.464284,
-            3.413881,
-            3.379436,
-            3.440961
+            2.898006,
+            2.863954,
+            2.84839,
+            2.8291,
+            2.825845
           ],
-          "median_ms": 3.431554,
-          "mean_ms": 3.4260232000000004,
-          "min_ms": 3.379436,
-          "max_ms": 3.464284
+          "median_ms": 2.84839,
+          "mean_ms": 2.853059,
+          "min_ms": 2.825845,
+          "max_ms": 2.898006
         },
         {
           "scenario": "upload_binary_batch",
           "description": "Upload a batch of 20 binary files (4 KiB each).",
           "backend": "postgres",
           "samples_ms": [
-            9.911746,
-            9.818022,
-            8.99729,
-            9.264162,
-            8.874674
+            13.131161,
+            10.029902,
+            9.263245,
+            8.931737,
+            9.469988
           ],
-          "median_ms": 9.264162,
-          "mean_ms": 9.3731788,
-          "min_ms": 8.874674,
-          "max_ms": 9.911746
+          "median_ms": 9.469988,
+          "mean_ms": 10.165206600000001,
+          "min_ms": 8.931737,
+          "max_ms": 13.131161
         },
         {
           "scenario": "upload_binary_batch",
           "description": "Upload a batch of 20 binary files (4 KiB each).",
           "backend": "minio_s3",
           "samples_ms": [
-            88.551483,
-            87.806187,
-            89.491799,
-            89.83992,
-            89.829127
+            86.69401,
+            104.11644,
+            99.179328,
+            95.780129,
+            86.615539
           ],
-          "median_ms": 89.491799,
-          "mean_ms": 89.1037032,
-          "min_ms": 87.806187,
-          "max_ms": 89.83992
+          "median_ms": 95.780129,
+          "mean_ms": 94.4770892,
+          "min_ms": 86.615539,
+          "max_ms": 104.11644
+        },
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "azure_blob",
+          "samples_ms": [
+            70.942131,
+            69.393499,
+            82.820395,
+            77.45801,
+            69.978972
+          ],
+          "median_ms": 70.942131,
+          "mean_ms": 74.1186014,
+          "min_ms": 69.393499,
+          "max_ms": 82.820395
+        },
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "gcs",
+          "samples_ms": [
+            41.555619,
+            59.595986,
+            42.049964,
+            46.314584,
+            48.073982
+          ],
+          "median_ms": 46.314584,
+          "mean_ms": 47.518027000000004,
+          "min_ms": 41.555619,
+          "max_ms": 59.595986
+        },
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "mongodb",
+          "samples_ms": [
+            43.6215,
+            44.789359,
+            38.63563,
+            31.569762,
+            32.212575
+          ],
+          "median_ms": 38.63563,
+          "mean_ms": 38.165765199999996,
+          "min_ms": 31.569762,
+          "max_ms": 44.789359
+        },
+        {
+          "scenario": "upload_binary_batch",
+          "description": "Upload a batch of 20 binary files (4 KiB each).",
+          "backend": "redis",
+          "samples_ms": [
+            11.955169,
+            12.033925,
+            14.765101,
+            11.984184,
+            11.826035
+          ],
+          "median_ms": 11.984184,
+          "mean_ms": 12.5128828,
+          "min_ms": 11.826035,
+          "max_ms": 14.765101
         }
       ]
     },
@@ -433,48 +881,112 @@
           "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
           "backend": "filesystem",
           "samples_ms": [
-            2.441299,
-            2.426782,
-            2.418997,
-            2.423786,
-            2.415531
+            2.116006,
+            2.136287,
+            2.113092,
+            2.108005,
+            2.097608
           ],
-          "median_ms": 2.423786,
-          "mean_ms": 2.425279,
-          "min_ms": 2.415531,
-          "max_ms": 2.441299
+          "median_ms": 2.113092,
+          "mean_ms": 2.1141996,
+          "min_ms": 2.097608,
+          "max_ms": 2.136287
         },
         {
           "scenario": "download_binary_batch",
           "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
           "backend": "postgres",
           "samples_ms": [
-            8.082483,
-            8.0316,
-            7.369719,
-            7.010367,
-            7.213613
+            7.394198,
+            8.259633,
+            7.01529,
+            7.177437,
+            6.661626
           ],
-          "median_ms": 7.369719,
-          "mean_ms": 7.541556399999999,
-          "min_ms": 7.010367,
-          "max_ms": 8.082483
+          "median_ms": 7.177437,
+          "mean_ms": 7.3016368,
+          "min_ms": 6.661626,
+          "max_ms": 8.259633
         },
         {
           "scenario": "download_binary_batch",
           "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
           "backend": "minio_s3",
           "samples_ms": [
-            70.115141,
-            70.157689,
-            84.311681,
-            69.717973,
-            69.471227
+            82.321834,
+            83.499828,
+            69.277974,
+            70.130545,
+            68.75436
           ],
-          "median_ms": 70.115141,
-          "mean_ms": 72.7547422,
-          "min_ms": 69.471227,
-          "max_ms": 84.311681
+          "median_ms": 70.130545,
+          "mean_ms": 74.79690819999999,
+          "min_ms": 68.75436,
+          "max_ms": 83.499828
+        },
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "azure_blob",
+          "samples_ms": [
+            59.609314,
+            57.879842,
+            56.351768,
+            56.348473,
+            63.684189
+          ],
+          "median_ms": 57.879842,
+          "mean_ms": 58.7747172,
+          "min_ms": 56.348473,
+          "max_ms": 63.684189
+        },
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "gcs",
+          "samples_ms": [
+            16.340477,
+            13.377276,
+            13.363805,
+            13.349584,
+            14.327068
+          ],
+          "median_ms": 13.377276,
+          "mean_ms": 14.151642,
+          "min_ms": 13.349584,
+          "max_ms": 16.340477
+        },
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "mongodb",
+          "samples_ms": [
+            17.354762,
+            17.030848,
+            18.321022,
+            17.581616,
+            20.858285
+          ],
+          "median_ms": 17.581616,
+          "mean_ms": 18.2293066,
+          "min_ms": 17.030848,
+          "max_ms": 20.858285
+        },
+        {
+          "scenario": "download_binary_batch",
+          "description": "Download a batch of 20 pre-populated binary files (4 KiB each).",
+          "backend": "redis",
+          "samples_ms": [
+            6.337567,
+            6.470702,
+            5.780963,
+            6.292388,
+            6.704602
+          ],
+          "median_ms": 6.337567,
+          "mean_ms": 6.3172444,
+          "min_ms": 5.780963,
+          "max_ms": 6.704602
         }
       ]
     }

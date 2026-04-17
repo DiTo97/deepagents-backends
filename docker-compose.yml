@@ -46,9 +46,15 @@ services:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     ports:
       - "10000:10000"
-    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "10000"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const net=require('net');const s=net.connect(10000,'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5

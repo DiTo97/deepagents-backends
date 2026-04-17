@@ -1259,22 +1259,8 @@ class AzureBlobBackend(BackendProtocol):
         self._prefix = config.prefix.strip("/")
         if self._prefix:
             self._prefix += "/"
-
-        if config.connection_string:
-            self._service = BlobServiceClient.from_connection_string(
-                config.connection_string
-            )
-        elif config.account_url:
-            self._service = BlobServiceClient(
-                account_url=config.account_url,
-                credential=config.credential,
-            )
-        else:
-            raise ValueError(
-                "AzureBlobConfig requires either connection_string or account_url"
-            )
-
-        self._container = self._service.get_container_client(config.container)
+        self._service: BlobServiceClient | None = None
+        self._service_loop: asyncio.AbstractEventLoop | None = None
 
     def _blob_name(self, path: str) -> str:
         return f"{self._prefix}{path.lstrip('/')}"
@@ -1286,17 +1272,46 @@ class AzureBlobBackend(BackendProtocol):
 
     async def close(self) -> None:
         """Close the underlying Azure clients."""
-        await self._service.close()
+        if self._service is not None:
+            await self._service.close()
+            self._service = None
+
+    async def _ensure_container_client(self):
+        """Lazily initialize the Azure Blob clients inside an event loop."""
+        loop = asyncio.get_running_loop()
+        if self._service is not None and self._service_loop is not loop:
+            await self._service.close()
+            self._service = None
+            self._service_loop = None
+
+        if self._service is None:
+            if self._config.connection_string:
+                self._service = BlobServiceClient.from_connection_string(
+                    self._config.connection_string
+                )
+            elif self._config.account_url:
+                self._service = BlobServiceClient(
+                    account_url=self._config.account_url,
+                    credential=self._config.credential,
+                )
+            else:
+                raise ValueError(
+                    "AzureBlobConfig requires either connection_string or account_url"
+                )
+            self._service_loop = loop
+        return self._service.get_container_client(self._config.container)
 
     async def ensure_container(self) -> None:
         """Create the configured container when it does not already exist."""
         try:
-            await self._container.create_container()
+            container = await self._ensure_container_client()
+            await container.create_container()
         except ResourceExistsError:
             pass
 
     async def _get_file_data(self, path: str) -> dict[str, Any] | None:
-        blob = self._container.get_blob_client(self._blob_name(path))
+        container = await self._ensure_container_client()
+        blob = container.get_blob_client(self._blob_name(path))
         try:
             downloader = await blob.download_blob()
             payload = await downloader.readall()
@@ -1313,7 +1328,8 @@ class AzureBlobBackend(BackendProtocol):
     ) -> None:
         if update_modified:
             data["modified_at"] = _utcnow_iso()
-        blob = self._container.get_blob_client(self._blob_name(path))
+        container = await self._ensure_container_client()
+        blob = container.get_blob_client(self._blob_name(path))
         await blob.upload_blob(
             json.dumps(data).encode("utf-8"),
             overwrite=True,
@@ -1321,13 +1337,15 @@ class AzureBlobBackend(BackendProtocol):
         )
 
     async def _exists(self, path: str) -> bool:
-        blob = self._container.get_blob_client(self._blob_name(path))
+        container = await self._ensure_container_client()
+        blob = container.get_blob_client(self._blob_name(path))
         return bool(await blob.exists())
 
     async def _list_blobs(self, prefix: str = "") -> list[tuple[str, int | None, str | None]]:
         blob_prefix = self._blob_name(prefix)
         results: list[tuple[str, int | None, str | None]] = []
-        async for blob in self._container.list_blobs(name_starts_with=blob_prefix):
+        container = await self._ensure_container_client()
+        async for blob in container.list_blobs(name_starts_with=blob_prefix):
             modified = blob.last_modified.isoformat() if blob.last_modified else None
             results.append((self._virtual_path(blob.name), getattr(blob, "size", 0), modified))
         return results
@@ -1449,7 +1467,8 @@ class AzureBlobBackend(BackendProtocol):
     ) -> list[FileUploadResponse]:
         responses: list[FileUploadResponse] = []
         for path, content in files:
-            blob = self._container.get_blob_client(self._blob_name(path))
+            container = await self._ensure_container_client()
+            blob = container.get_blob_client(self._blob_name(path))
             try:
                 await blob.upload_blob(
                     content,
@@ -1469,7 +1488,8 @@ class AzureBlobBackend(BackendProtocol):
     async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         responses: list[FileDownloadResponse] = []
         for path in paths:
-            blob = self._container.get_blob_client(self._blob_name(path))
+            container = await self._ensure_container_client()
+            blob = container.get_blob_client(self._blob_name(path))
             try:
                 downloader = await blob.download_blob()
                 content = await downloader.readall()
@@ -1508,10 +1528,8 @@ class GCSBackend(BackendProtocol):
         self._prefix = config.prefix.strip("/")
         if self._prefix:
             self._prefix += "/"
-        self._storage = GCSStorage(
-            service_file=config.service_file,
-            api_root=config.api_root,
-        )
+        self._storage: GCSStorage | None = None
+        self._storage_loop: asyncio.AbstractEventLoop | None = None
         self._bucket = config.bucket
 
     def _object_name(self, path: str) -> str:
@@ -1524,11 +1542,32 @@ class GCSBackend(BackendProtocol):
 
     async def close(self) -> None:
         """Close the underlying GCS session."""
-        await self._storage.close()
+        if self._storage is not None:
+            await self._storage.close()
+            self._storage = None
+
+    async def _ensure_storage(self) -> GCSStorage:
+        """Lazily initialize the underlying GCS client inside an event loop."""
+        loop = asyncio.get_running_loop()
+        if self._storage is not None and self._storage_loop is not loop:
+            await self._storage.close()
+            self._storage = None
+            self._storage_loop = None
+
+        if self._storage is None:
+            self._storage = GCSStorage(
+                service_file=self._config.service_file,
+                api_root=self._config.api_root,
+            )
+            self._storage_loop = loop
+        return self._storage
 
     async def _get_file_data(self, path: str) -> dict[str, Any] | None:
         try:
-            payload = await self._storage.download(self._bucket, self._object_name(path))
+            storage = await self._ensure_storage()
+            payload = await storage.download(
+                self._bucket, self._object_name(path)
+            )
         except Exception as exc:
             if _status_code_from_error(exc) in {404, 410}:
                 return None
@@ -1544,7 +1583,8 @@ class GCSBackend(BackendProtocol):
     ) -> None:
         if update_modified:
             data["modified_at"] = _utcnow_iso()
-        await self._storage.upload(
+        storage = await self._ensure_storage()
+        await storage.upload(
             self._bucket,
             self._object_name(path),
             json.dumps(data).encode("utf-8"),
@@ -1553,7 +1593,10 @@ class GCSBackend(BackendProtocol):
 
     async def _exists(self, path: str) -> bool:
         try:
-            await self._storage.download_metadata(self._bucket, self._object_name(path))
+            storage = await self._ensure_storage()
+            await storage.download_metadata(
+                self._bucket, self._object_name(path)
+            )
             return True
         except Exception as exc:
             if _status_code_from_error(exc) in {404, 410}:
@@ -1565,7 +1608,8 @@ class GCSBackend(BackendProtocol):
         results: list[tuple[str, int | None, str | None]] = []
 
         while True:
-            content = await self._storage.list_objects(self._bucket, params=params)
+            storage = await self._ensure_storage()
+            content = await storage.list_objects(self._bucket, params=params)
             for item in content.get("items", []):
                 results.append(
                     (
@@ -1699,7 +1743,8 @@ class GCSBackend(BackendProtocol):
         responses: list[FileUploadResponse] = []
         for path, content in files:
             try:
-                await self._storage.upload(
+                storage = await self._ensure_storage()
+                await storage.upload(
                     self._bucket,
                     self._object_name(path),
                     content,
@@ -1717,7 +1762,10 @@ class GCSBackend(BackendProtocol):
         responses: list[FileDownloadResponse] = []
         for path in paths:
             try:
-                content = await self._storage.download(self._bucket, self._object_name(path))
+                storage = await self._ensure_storage()
+                content = await storage.download(
+                    self._bucket, self._object_name(path)
+                )
                 responses.append(FileDownloadResponse(path=path, content=content, error=None))
             except Exception as exc:
                 error = (
@@ -1753,11 +1801,9 @@ class MongoDBBackend(BackendProtocol):
         self._prefix = config.prefix.strip("/")
         if self._prefix:
             self._prefix += "/"
-        self._client = AsyncIOMotorClient(
-            config.connection_uri,
-            serverSelectionTimeoutMS=config.server_selection_timeout_ms,
-        )
-        self._collection = self._client[config.database][config.collection]
+        self._client: AsyncIOMotorClient | None = None
+        self._collection = None
+        self._client_loop: asyncio.AbstractEventLoop | None = None
         self._initialized = False
 
     def _storage_path(self, path: str) -> str:
@@ -1770,18 +1816,45 @@ class MongoDBBackend(BackendProtocol):
 
     async def initialize(self) -> None:
         """Create indexes used by the backend."""
+        collection = await self._ensure_collection()
         if self._initialized:
             return
-        await self._collection.create_index("path", unique=True)
-        await self._collection.create_index("modified_at")
+        await collection.create_index("path", unique=True)
+        await collection.create_index("modified_at")
         self._initialized = True
 
     async def close(self) -> None:
         """Close the MongoDB client."""
-        self._client.close()
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+            self._collection = None
+            self._client_loop = None
+            self._initialized = False
+
+    async def _ensure_collection(self):
+        """Lazily initialize the MongoDB client inside an event loop."""
+        loop = asyncio.get_running_loop()
+        if self._client is not None and self._client_loop is not loop:
+            self._client.close()
+            self._client = None
+            self._collection = None
+            self._client_loop = None
+            self._initialized = False
+
+        if self._client is None:
+            self._client = AsyncIOMotorClient(
+                self._config.connection_uri,
+                serverSelectionTimeoutMS=self._config.server_selection_timeout_ms,
+            )
+            self._collection = self._client[self._config.database][self._config.collection]
+            self._client_loop = loop
+
+        return self._collection
 
     async def _get_file_data(self, path: str) -> dict[str, Any] | None:
-        document = await self._collection.find_one({"path": self._storage_path(path)})
+        collection = await self._ensure_collection()
+        document = await collection.find_one({"path": self._storage_path(path)})
         if document is None:
             return None
         return {
@@ -1803,7 +1876,8 @@ class MongoDBBackend(BackendProtocol):
     ) -> None:
         storage_path = self._storage_path(path)
         now = datetime.now(timezone.utc)
-        existing = await self._collection.find_one({"path": storage_path}, {"created_at": 1})
+        collection = await self._ensure_collection()
+        existing = await collection.find_one({"path": storage_path}, {"created_at": 1})
         created_at = existing.get("created_at") if existing else now
         document = {
             "path": storage_path,
@@ -1811,16 +1885,18 @@ class MongoDBBackend(BackendProtocol):
             "created_at": created_at,
             "modified_at": now if update_modified else created_at,
         }
-        await self._collection.replace_one({"path": storage_path}, document, upsert=True)
+        await collection.replace_one({"path": storage_path}, document, upsert=True)
 
     async def _exists(self, path: str) -> bool:
-        return bool(await self._collection.find_one({"path": self._storage_path(path)}, {"_id": 1}))
+        collection = await self._ensure_collection()
+        return bool(await collection.find_one({"path": self._storage_path(path)}, {"_id": 1}))
 
     async def _list_documents(self, path: str = "/") -> list[tuple[str, int | None, str | None]]:
         storage_prefix = self._storage_path(path)
         regex = f"^{re.escape(storage_prefix)}"
         results: list[tuple[str, int | None, str | None]] = []
-        cursor = self._collection.find({"path": {"$regex": regex}})
+        collection = await self._ensure_collection()
+        cursor = collection.find({"path": {"$regex": regex}})
         async for document in cursor:
             results.append(
                 (
@@ -1909,7 +1985,8 @@ class MongoDBBackend(BackendProtocol):
 
         storage_prefix = self._storage_path(path or "/")
         matches: list[GrepMatch] = []
-        cursor = self._collection.find({"path": {"$regex": f"^{re.escape(storage_prefix)}"}})
+        collection = await self._ensure_collection()
+        cursor = collection.find({"path": {"$regex": f"^{re.escape(storage_prefix)}"}})
         async for document in cursor:
             virtual_path = self._virtual_path(document["path"])
             filename = PurePosixPath(virtual_path).name
@@ -1925,7 +2002,8 @@ class MongoDBBackend(BackendProtocol):
 
     async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
         results: list[FileInfo] = []
-        cursor = self._collection.find({"path": {"$regex": f"^{re.escape(self._storage_path(path))}"}})
+        collection = await self._ensure_collection()
+        cursor = collection.find({"path": {"$regex": f"^{re.escape(self._storage_path(path))}"}})
         async for document in cursor:
             virtual_path = self._virtual_path(document["path"])
             if _matches_glob(pattern, path, virtual_path):
@@ -2007,7 +2085,8 @@ class RedisBackend(BackendProtocol):
         self._prefix = config.prefix.strip("/")
         if self._prefix:
             self._prefix += "/"
-        self._client = redis.from_url(config.url, decode_responses=False)
+        self._client = None
+        self._client_loop: asyncio.AbstractEventLoop | None = None
         self._namespace = config.namespace
         self._index_key = f"{self._namespace}:__index__"
 
@@ -2024,10 +2103,30 @@ class RedisBackend(BackendProtocol):
 
     async def close(self) -> None:
         """Close the Redis client."""
-        await self._client.aclose()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+            self._client_loop = None
+
+    async def _ensure_client(self):
+        """Lazily initialize the Redis client inside an event loop."""
+        loop = asyncio.get_running_loop()
+        if self._client is not None and self._client_loop is not loop:
+            try:
+                await self._client.aclose()
+            except RuntimeError:
+                pass
+            self._client = None
+            self._client_loop = None
+
+        if self._client is None:
+            self._client = redis.from_url(self._config.url, decode_responses=False)
+            self._client_loop = loop
+        return self._client
 
     async def _get_file_data(self, path: str) -> dict[str, Any] | None:
-        payload = await self._client.get(self._data_key(path))
+        client = await self._ensure_client()
+        payload = await client.get(self._data_key(path))
         if payload is None:
             return None
         if isinstance(payload, bytes):
@@ -2044,18 +2143,21 @@ class RedisBackend(BackendProtocol):
         if update_modified:
             data["modified_at"] = _utcnow_iso()
         storage_path = self._storage_path(path)
-        await self._client.set(
+        client = await self._ensure_client()
+        await client.set(
             f"{self._namespace}:file:{storage_path}",
             json.dumps(data).encode("utf-8"),
         )
-        await self._client.sadd(self._index_key, storage_path)
+        await client.sadd(self._index_key, storage_path)
 
     async def _exists(self, path: str) -> bool:
-        return bool(await self._client.exists(self._data_key(path)))
+        client = await self._ensure_client()
+        return bool(await client.exists(self._data_key(path)))
 
     async def _list_paths(self, path: str = "/") -> list[tuple[str, int | None, str | None]]:
         storage_prefix = self._storage_path(path)
-        members = await self._client.smembers(self._index_key)
+        client = await self._ensure_client()
+        members = await client.smembers(self._index_key)
         storage_paths = sorted(
             (
                 member.decode("utf-8") if isinstance(member, bytes) else str(member)
@@ -2068,7 +2170,7 @@ class RedisBackend(BackendProtocol):
             for storage_path in storage_paths
             if storage_path.startswith(storage_prefix)
         ]
-        payloads = await self._client.mget(
+        payloads = await client.mget(
             [f"{self._namespace}:file:{storage_path}" for storage_path in matching]
         )
 
