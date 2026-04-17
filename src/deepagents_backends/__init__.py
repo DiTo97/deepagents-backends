@@ -1,9 +1,8 @@
 """
 Deep Agents Remote Backends
 
-S3 and PostgreSQL backend implementations for LangChain's Deep Agents.
-Supports any S3-compatible storage (AWS S3, MinIO, etc.) and PostgreSQL
-with connection pooling for optimal performance.
+S3, PostgreSQL, Azure Blob, GCS, MongoDB, and Redis/Valkey backend
+implementations for LangChain's Deep Agents.
 """
 
 from __future__ import annotations
@@ -21,7 +20,10 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Coroutine
 
 import aioboto3
 import psycopg_pool
+import redis.asyncio as redis
 import wcmatch.glob as wcglob
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+from azure.storage.blob.aio import BlobServiceClient
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from deepagents.backends.protocol import (
@@ -38,11 +40,26 @@ from deepagents.backends.utils import (
     format_content_with_line_numbers,
     perform_string_replacement,
 )
+from gcloud.aio.storage import Storage as GCSStorage
+from motor.motor_asyncio import AsyncIOMotorClient
 
 if TYPE_CHECKING:
     from types_aiobotocore_s3 import S3Client
 
-__all__ = ["S3Backend", "S3Config", "PostgresBackend", "PostgresConfig"]
+__all__ = [
+    "S3Backend",
+    "S3Config",
+    "PostgresBackend",
+    "PostgresConfig",
+    "AzureBlobBackend",
+    "AzureBlobConfig",
+    "GCSBackend",
+    "GCSConfig",
+    "MongoDBBackend",
+    "MongoDBConfig",
+    "RedisBackend",
+    "RedisConfig",
+]
 
 
 class _AsyncThread(threading.Thread):
@@ -103,6 +120,136 @@ def run_async_safely[T](coroutine: Coroutine[Any, Any, T], timeout: float | None
             coroutine = asyncio.wait_for(coroutine, timeout)
 
         return asyncio.run(coroutine)
+
+
+def _utcnow_iso() -> str:
+    """Return the current UTC timestamp in ISO-8601 format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _make_text_file_data(content: str) -> dict[str, Any]:
+    """Build the canonical JSON payload used by text-oriented backends."""
+    now = _utcnow_iso()
+    return {
+        "content": content.splitlines(),
+        "created_at": now,
+        "modified_at": now,
+    }
+
+
+def _read_text_payload(
+    file_path: str,
+    data: dict[str, Any] | None,
+    offset: int = 0,
+    limit: int = 2000,
+) -> str:
+    """Render stored line-array content using Deep Agents' read format."""
+    if data is None:
+        return f"Error: File '{file_path}' not found"
+
+    lines = data.get("content", [])
+    if not lines:
+        empty_msg = check_empty_content("")
+        if empty_msg:
+            return empty_msg
+
+    if offset >= len(lines):
+        return f"Error: Line offset {offset} exceeds file length ({len(lines)} lines)"
+
+    selected = lines[offset : offset + limit]
+    return format_content_with_line_numbers(selected, start_line=offset + 1)
+
+
+def _edit_text_payload(
+    data: dict[str, Any] | None,
+    *,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+) -> tuple[dict[str, Any] | None, int | None, str | None]:
+    """Apply Deep Agents string replacement semantics to stored file data."""
+    if data is None:
+        return None, None, "file_not_found"
+
+    content = "\n".join(data.get("content", []))
+    result = perform_string_replacement(content, old_string, new_string, replace_all)
+    if isinstance(result, str):
+        return None, None, result
+
+    new_content, occurrences = result
+    data["content"] = new_content.splitlines()
+    return data, int(occurrences), None
+
+
+def _normalize_virtual_path(path: str) -> str:
+    """Normalize any path into a slash-prefixed virtual path."""
+    return "/" + path.lstrip("/")
+
+
+def _build_direct_listing(
+    directory_path: str,
+    files: list[tuple[str, int | None, str | None]],
+) -> list[FileInfo]:
+    """Collapse recursive file metadata into direct child file/dir entries."""
+    normalized_dir = "/" if directory_path == "/" else "/" + directory_path.strip("/")
+    base = normalized_dir.strip("/")
+    prefix = f"{base}/" if base else ""
+
+    direct_files: list[FileInfo] = []
+    direct_dirs: set[str] = set()
+
+    for virtual_path, size, modified_at in files:
+        clean = virtual_path.lstrip("/")
+        if prefix:
+            if not clean.startswith(prefix):
+                continue
+            rel = clean[len(prefix) :]
+        else:
+            rel = clean
+
+        if not rel:
+            continue
+
+        child, sep, _rest = rel.partition("/")
+        if sep:
+            direct_dirs.add(child)
+            continue
+
+        direct_files.append(
+            {
+                "path": _normalize_virtual_path(clean),
+                "is_dir": False,
+                "size": size or 0,
+                "modified_at": modified_at,
+            }
+        )
+
+    results = direct_files + [
+        {
+            "path": (
+                f"{normalized_dir.rstrip('/')}/{dir_name}/"
+                if normalized_dir != "/"
+                else f"/{dir_name}/"
+            ),
+            "is_dir": True,
+        }
+        for dir_name in sorted(direct_dirs)
+    ]
+    results.sort(key=lambda item: item.get("path", ""))
+    return results
+
+
+def _matches_glob(pattern: str, path: str, virtual_path: str) -> bool:
+    """Return whether a path matches a glob relative to a search root or absolutely."""
+    rel_path = (
+        virtual_path[len(path) :].lstrip("/") if path != "/" else virtual_path[1:]
+    )
+    return fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(virtual_path, pattern)
+
+
+def _status_code_from_error(error: Exception) -> int | None:
+    """Extract an HTTP-like status code from client exceptions when available."""
+    return getattr(error, "status", getattr(error, "code", None))
 
 
 # =============================================================================
@@ -1085,4 +1232,1005 @@ class PostgresBackend(BackendProtocol):
                         FileDownloadResponse(path=path, content=None, error="invalid_path")
                     )
 
+        return responses
+
+
+# =============================================================================
+# Azure Blob Storage Backend
+# =============================================================================
+
+
+@dataclass
+class AzureBlobConfig:
+    """Configuration for Azure Blob Storage."""
+
+    container: str
+    prefix: str = ""
+    connection_string: str | None = None
+    account_url: str | None = None
+    credential: Any = None
+
+
+class AzureBlobBackend(BackendProtocol):
+    """Azure Blob Storage backend for Deep Agents file operations."""
+
+    def __init__(self, config: AzureBlobConfig) -> None:
+        self._config = config
+        self._prefix = config.prefix.strip("/")
+        if self._prefix:
+            self._prefix += "/"
+
+        if config.connection_string:
+            self._service = BlobServiceClient.from_connection_string(
+                config.connection_string
+            )
+        elif config.account_url:
+            self._service = BlobServiceClient(
+                account_url=config.account_url,
+                credential=config.credential,
+            )
+        else:
+            raise ValueError(
+                "AzureBlobConfig requires either connection_string or account_url"
+            )
+
+        self._container = self._service.get_container_client(config.container)
+
+    def _blob_name(self, path: str) -> str:
+        return f"{self._prefix}{path.lstrip('/')}"
+
+    def _virtual_path(self, blob_name: str) -> str:
+        if self._prefix and blob_name.startswith(self._prefix):
+            blob_name = blob_name[len(self._prefix) :]
+        return _normalize_virtual_path(blob_name)
+
+    async def close(self) -> None:
+        """Close the underlying Azure clients."""
+        await self._service.close()
+
+    async def ensure_container(self) -> None:
+        """Create the configured container when it does not already exist."""
+        try:
+            await self._container.create_container()
+        except ResourceExistsError:
+            pass
+
+    async def _get_file_data(self, path: str) -> dict[str, Any] | None:
+        blob = self._container.get_blob_client(self._blob_name(path))
+        try:
+            downloader = await blob.download_blob()
+            payload = await downloader.readall()
+        except ResourceNotFoundError:
+            return None
+        return json.loads(payload.decode("utf-8"))
+
+    async def _put_file_data(
+        self,
+        path: str,
+        data: dict[str, Any],
+        *,
+        update_modified: bool = True,
+    ) -> None:
+        if update_modified:
+            data["modified_at"] = _utcnow_iso()
+        blob = self._container.get_blob_client(self._blob_name(path))
+        await blob.upload_blob(
+            json.dumps(data).encode("utf-8"),
+            overwrite=True,
+            content_type="application/json",
+        )
+
+    async def _exists(self, path: str) -> bool:
+        blob = self._container.get_blob_client(self._blob_name(path))
+        return bool(await blob.exists())
+
+    async def _list_blobs(self, prefix: str = "") -> list[tuple[str, int | None, str | None]]:
+        blob_prefix = self._blob_name(prefix)
+        results: list[tuple[str, int | None, str | None]] = []
+        async for blob in self._container.list_blobs(name_starts_with=blob_prefix):
+            modified = blob.last_modified.isoformat() if blob.last_modified else None
+            results.append((self._virtual_path(blob.name), getattr(blob, "size", 0), modified))
+        return results
+
+    def ls_info(self, path: str) -> list[FileInfo]:
+        return run_async_safely(self.als_info(path))
+
+    async def als_info(self, path: str) -> list[FileInfo]:
+        return _build_direct_listing(path, await self._list_blobs(path))
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return run_async_safely(self.aread(file_path, offset, limit))
+
+    async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return _read_text_payload(file_path, await self._get_file_data(file_path), offset, limit)
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        return run_async_safely(self.awrite(file_path, content))
+
+    async def awrite(self, file_path: str, content: str) -> WriteResult:
+        if await self._exists(file_path):
+            return WriteResult(
+                error=f"Cannot write to {file_path} because it already exists. "
+                "Read and then make an edit, or write to a new path."
+            )
+
+        try:
+            await self._put_file_data(file_path, _make_text_file_data(content), update_modified=False)
+            return WriteResult(path=file_path, files_update=None)
+        except Exception as exc:
+            return WriteResult(error=f"Error writing file '{file_path}': {exc}")
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        return run_async_safely(
+            self.aedit(file_path, old_string, new_string, replace_all)
+        )
+
+    async def aedit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        updated, occurrences, error = _edit_text_payload(
+            await self._get_file_data(file_path),
+            old_string=old_string,
+            new_string=new_string,
+            replace_all=replace_all,
+        )
+        if error == "file_not_found":
+            return EditResult(error=f"Error: File '{file_path}' not found")
+        if error:
+            return EditResult(error=error)
+
+        try:
+            await self._put_file_data(file_path, updated or {})
+            return EditResult(path=file_path, files_update=None, occurrences=occurrences or 0)
+        except Exception as exc:
+            return EditResult(error=f"Error editing file '{file_path}': {exc}")
+
+    def grep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        return run_async_safely(self.agrep_raw(pattern, path, glob))
+
+    async def agrep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+
+        matches: list[GrepMatch] = []
+        for virtual_path, _size, _modified in await self._list_blobs(path or "/"):
+            filename = PurePosixPath(virtual_path).name
+            if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
+                continue
+
+            data = await self._get_file_data(virtual_path)
+            if data is None:
+                continue
+
+            for line_num, line in enumerate(data.get("content", []), 1):
+                if regex.search(line):
+                    matches.append({"path": virtual_path, "line": line_num, "text": line})
+        return matches
+
+    def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        return run_async_safely(self.aglob_info(pattern, path))
+
+    async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        results: list[FileInfo] = []
+        for virtual_path, size, modified_at in await self._list_blobs(path):
+            if _matches_glob(pattern, path, virtual_path):
+                results.append(
+                    {
+                        "path": virtual_path,
+                        "is_dir": False,
+                        "size": size or 0,
+                        "modified_at": modified_at,
+                    }
+                )
+        results.sort(key=lambda item: item.get("path", ""))
+        return results
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        return run_async_safely(self.aupload_files(files))
+
+    async def aupload_files(
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
+        responses: list[FileUploadResponse] = []
+        for path, content in files:
+            blob = self._container.get_blob_client(self._blob_name(path))
+            try:
+                await blob.upload_blob(
+                    content,
+                    overwrite=True,
+                    content_type="application/octet-stream",
+                )
+                responses.append(FileUploadResponse(path=path, error=None))
+            except ResourceNotFoundError:
+                responses.append(FileUploadResponse(path=path, error="invalid_path"))
+            except Exception:
+                responses.append(FileUploadResponse(path=path, error="invalid_path"))
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        return run_async_safely(self.adownload_files(paths))
+
+    async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        responses: list[FileDownloadResponse] = []
+        for path in paths:
+            blob = self._container.get_blob_client(self._blob_name(path))
+            try:
+                downloader = await blob.download_blob()
+                content = await downloader.readall()
+                responses.append(FileDownloadResponse(path=path, content=content, error=None))
+            except ResourceNotFoundError:
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="file_not_found")
+                )
+            except Exception:
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="invalid_path")
+                )
+        return responses
+
+
+# =============================================================================
+# Google Cloud Storage Backend
+# =============================================================================
+
+
+@dataclass
+class GCSConfig:
+    """Configuration for Google Cloud Storage."""
+
+    bucket: str
+    prefix: str = ""
+    service_file: str | None = None
+    api_root: str | None = None
+
+
+class GCSBackend(BackendProtocol):
+    """Google Cloud Storage backend for Deep Agents file operations."""
+
+    def __init__(self, config: GCSConfig) -> None:
+        self._config = config
+        self._prefix = config.prefix.strip("/")
+        if self._prefix:
+            self._prefix += "/"
+        self._storage = GCSStorage(
+            service_file=config.service_file,
+            api_root=config.api_root,
+        )
+        self._bucket = config.bucket
+
+    def _object_name(self, path: str) -> str:
+        return f"{self._prefix}{path.lstrip('/')}"
+
+    def _virtual_path(self, object_name: str) -> str:
+        if self._prefix and object_name.startswith(self._prefix):
+            object_name = object_name[len(self._prefix) :]
+        return _normalize_virtual_path(object_name)
+
+    async def close(self) -> None:
+        """Close the underlying GCS session."""
+        await self._storage.close()
+
+    async def _get_file_data(self, path: str) -> dict[str, Any] | None:
+        try:
+            payload = await self._storage.download(self._bucket, self._object_name(path))
+        except Exception as exc:
+            if _status_code_from_error(exc) in {404, 410}:
+                return None
+            raise
+        return json.loads(payload.decode("utf-8"))
+
+    async def _put_file_data(
+        self,
+        path: str,
+        data: dict[str, Any],
+        *,
+        update_modified: bool = True,
+    ) -> None:
+        if update_modified:
+            data["modified_at"] = _utcnow_iso()
+        await self._storage.upload(
+            self._bucket,
+            self._object_name(path),
+            json.dumps(data).encode("utf-8"),
+            content_type="application/json",
+        )
+
+    async def _exists(self, path: str) -> bool:
+        try:
+            await self._storage.download_metadata(self._bucket, self._object_name(path))
+            return True
+        except Exception as exc:
+            if _status_code_from_error(exc) in {404, 410}:
+                return False
+            raise
+
+    async def _list_objects(self, prefix: str = "") -> list[tuple[str, int | None, str | None]]:
+        params: dict[str, str] = {"prefix": self._object_name(prefix), "pageToken": ""}
+        results: list[tuple[str, int | None, str | None]] = []
+
+        while True:
+            content = await self._storage.list_objects(self._bucket, params=params)
+            for item in content.get("items", []):
+                results.append(
+                    (
+                        self._virtual_path(item["name"]),
+                        int(item.get("size", 0)),
+                        item.get("updated"),
+                    )
+                )
+            page_token = content.get("nextPageToken", "")
+            if not page_token:
+                break
+            params["pageToken"] = page_token
+
+        return results
+
+    def ls_info(self, path: str) -> list[FileInfo]:
+        return run_async_safely(self.als_info(path))
+
+    async def als_info(self, path: str) -> list[FileInfo]:
+        return _build_direct_listing(path, await self._list_objects(path))
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return run_async_safely(self.aread(file_path, offset, limit))
+
+    async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return _read_text_payload(file_path, await self._get_file_data(file_path), offset, limit)
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        return run_async_safely(self.awrite(file_path, content))
+
+    async def awrite(self, file_path: str, content: str) -> WriteResult:
+        if await self._exists(file_path):
+            return WriteResult(
+                error=f"Cannot write to {file_path} because it already exists. "
+                "Read and then make an edit, or write to a new path."
+            )
+
+        try:
+            await self._put_file_data(file_path, _make_text_file_data(content), update_modified=False)
+            return WriteResult(path=file_path, files_update=None)
+        except Exception as exc:
+            return WriteResult(error=f"Error writing file '{file_path}': {exc}")
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        return run_async_safely(
+            self.aedit(file_path, old_string, new_string, replace_all)
+        )
+
+    async def aedit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        updated, occurrences, error = _edit_text_payload(
+            await self._get_file_data(file_path),
+            old_string=old_string,
+            new_string=new_string,
+            replace_all=replace_all,
+        )
+        if error == "file_not_found":
+            return EditResult(error=f"Error: File '{file_path}' not found")
+        if error:
+            return EditResult(error=error)
+
+        try:
+            await self._put_file_data(file_path, updated or {})
+            return EditResult(path=file_path, files_update=None, occurrences=occurrences or 0)
+        except Exception as exc:
+            return EditResult(error=f"Error editing file '{file_path}': {exc}")
+
+    def grep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        return run_async_safely(self.agrep_raw(pattern, path, glob))
+
+    async def agrep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+
+        matches: list[GrepMatch] = []
+        for virtual_path, _size, _modified in await self._list_objects(path or "/"):
+            filename = PurePosixPath(virtual_path).name
+            if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
+                continue
+
+            data = await self._get_file_data(virtual_path)
+            if data is None:
+                continue
+
+            for line_num, line in enumerate(data.get("content", []), 1):
+                if regex.search(line):
+                    matches.append({"path": virtual_path, "line": line_num, "text": line})
+        return matches
+
+    def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        return run_async_safely(self.aglob_info(pattern, path))
+
+    async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        results: list[FileInfo] = []
+        for virtual_path, size, modified_at in await self._list_objects(path):
+            if _matches_glob(pattern, path, virtual_path):
+                results.append(
+                    {
+                        "path": virtual_path,
+                        "is_dir": False,
+                        "size": size or 0,
+                        "modified_at": modified_at,
+                    }
+                )
+        results.sort(key=lambda item: item.get("path", ""))
+        return results
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        return run_async_safely(self.aupload_files(files))
+
+    async def aupload_files(
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
+        responses: list[FileUploadResponse] = []
+        for path, content in files:
+            try:
+                await self._storage.upload(
+                    self._bucket,
+                    self._object_name(path),
+                    content,
+                    content_type="application/octet-stream",
+                )
+                responses.append(FileUploadResponse(path=path, error=None))
+            except Exception:
+                responses.append(FileUploadResponse(path=path, error="invalid_path"))
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        return run_async_safely(self.adownload_files(paths))
+
+    async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        responses: list[FileDownloadResponse] = []
+        for path in paths:
+            try:
+                content = await self._storage.download(self._bucket, self._object_name(path))
+                responses.append(FileDownloadResponse(path=path, content=content, error=None))
+            except Exception as exc:
+                error = (
+                    "file_not_found"
+                    if _status_code_from_error(exc) in {404, 410}
+                    else "invalid_path"
+                )
+                responses.append(FileDownloadResponse(path=path, content=None, error=error))
+        return responses
+
+
+# =============================================================================
+# MongoDB Backend
+# =============================================================================
+
+
+@dataclass
+class MongoDBConfig:
+    """Configuration for MongoDB storage."""
+
+    connection_uri: str = "mongodb://localhost:27017"
+    database: str = "deepagents"
+    collection: str = "files"
+    prefix: str = ""
+    server_selection_timeout_ms: int = 5000
+
+
+class MongoDBBackend(BackendProtocol):
+    """MongoDB backend for Deep Agents file operations."""
+
+    def __init__(self, config: MongoDBConfig) -> None:
+        self._config = config
+        self._prefix = config.prefix.strip("/")
+        if self._prefix:
+            self._prefix += "/"
+        self._client = AsyncIOMotorClient(
+            config.connection_uri,
+            serverSelectionTimeoutMS=config.server_selection_timeout_ms,
+        )
+        self._collection = self._client[config.database][config.collection]
+        self._initialized = False
+
+    def _storage_path(self, path: str) -> str:
+        return f"{self._prefix}{path.lstrip('/')}"
+
+    def _virtual_path(self, path: str) -> str:
+        if self._prefix and path.startswith(self._prefix):
+            path = path[len(self._prefix) :]
+        return _normalize_virtual_path(path)
+
+    async def initialize(self) -> None:
+        """Create indexes used by the backend."""
+        if self._initialized:
+            return
+        await self._collection.create_index("path", unique=True)
+        await self._collection.create_index("modified_at")
+        self._initialized = True
+
+    async def close(self) -> None:
+        """Close the MongoDB client."""
+        self._client.close()
+
+    async def _get_file_data(self, path: str) -> dict[str, Any] | None:
+        document = await self._collection.find_one({"path": self._storage_path(path)})
+        if document is None:
+            return None
+        return {
+            "content": document.get("content", []),
+            "created_at": (
+                document.get("created_at").isoformat() if document.get("created_at") else None
+            ),
+            "modified_at": (
+                document.get("modified_at").isoformat() if document.get("modified_at") else None
+            ),
+        }
+
+    async def _put_file_data(
+        self,
+        path: str,
+        data: dict[str, Any],
+        *,
+        update_modified: bool = True,
+    ) -> None:
+        storage_path = self._storage_path(path)
+        now = datetime.now(timezone.utc)
+        existing = await self._collection.find_one({"path": storage_path}, {"created_at": 1})
+        created_at = existing.get("created_at") if existing else now
+        document = {
+            "path": storage_path,
+            "content": data.get("content", []),
+            "created_at": created_at,
+            "modified_at": now if update_modified else created_at,
+        }
+        await self._collection.replace_one({"path": storage_path}, document, upsert=True)
+
+    async def _exists(self, path: str) -> bool:
+        return bool(await self._collection.find_one({"path": self._storage_path(path)}, {"_id": 1}))
+
+    async def _list_documents(self, path: str = "/") -> list[tuple[str, int | None, str | None]]:
+        storage_prefix = self._storage_path(path)
+        regex = f"^{re.escape(storage_prefix)}"
+        results: list[tuple[str, int | None, str | None]] = []
+        cursor = self._collection.find({"path": {"$regex": regex}})
+        async for document in cursor:
+            results.append(
+                (
+                    self._virtual_path(document["path"]),
+                    len(document.get("content", [])),
+                    document.get("modified_at").isoformat() if document.get("modified_at") else None,
+                )
+            )
+        return results
+
+    def ls_info(self, path: str) -> list[FileInfo]:
+        return run_async_safely(self.als_info(path))
+
+    async def als_info(self, path: str) -> list[FileInfo]:
+        return _build_direct_listing(path, await self._list_documents(path))
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return run_async_safely(self.aread(file_path, offset, limit))
+
+    async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return _read_text_payload(file_path, await self._get_file_data(file_path), offset, limit)
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        return run_async_safely(self.awrite(file_path, content))
+
+    async def awrite(self, file_path: str, content: str) -> WriteResult:
+        if await self._exists(file_path):
+            return WriteResult(
+                error=f"Cannot write to {file_path} because it already exists. "
+                "Read and then make an edit, or write to a new path."
+            )
+
+        try:
+            await self._put_file_data(file_path, _make_text_file_data(content), update_modified=False)
+            return WriteResult(path=file_path, files_update=None)
+        except Exception as exc:
+            return WriteResult(error=f"Error writing file '{file_path}': {exc}")
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        return run_async_safely(
+            self.aedit(file_path, old_string, new_string, replace_all)
+        )
+
+    async def aedit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        updated, occurrences, error = _edit_text_payload(
+            await self._get_file_data(file_path),
+            old_string=old_string,
+            new_string=new_string,
+            replace_all=replace_all,
+        )
+        if error == "file_not_found":
+            return EditResult(error=f"Error: File '{file_path}' not found")
+        if error:
+            return EditResult(error=error)
+
+        try:
+            await self._put_file_data(file_path, updated or {})
+            return EditResult(path=file_path, files_update=None, occurrences=occurrences or 0)
+        except Exception as exc:
+            return EditResult(error=f"Error editing file '{file_path}': {exc}")
+
+    def grep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        return run_async_safely(self.agrep_raw(pattern, path, glob))
+
+    async def agrep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+
+        storage_prefix = self._storage_path(path or "/")
+        matches: list[GrepMatch] = []
+        cursor = self._collection.find({"path": {"$regex": f"^{re.escape(storage_prefix)}"}})
+        async for document in cursor:
+            virtual_path = self._virtual_path(document["path"])
+            filename = PurePosixPath(virtual_path).name
+            if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
+                continue
+            for line_num, line in enumerate(document.get("content", []), 1):
+                if regex.search(line):
+                    matches.append({"path": virtual_path, "line": line_num, "text": line})
+        return matches
+
+    def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        return run_async_safely(self.aglob_info(pattern, path))
+
+    async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        results: list[FileInfo] = []
+        cursor = self._collection.find({"path": {"$regex": f"^{re.escape(self._storage_path(path))}"}})
+        async for document in cursor:
+            virtual_path = self._virtual_path(document["path"])
+            if _matches_glob(pattern, path, virtual_path):
+                results.append(
+                    {
+                        "path": virtual_path,
+                        "is_dir": False,
+                        "size": len(document.get("content", [])),
+                        "modified_at": (
+                            document.get("modified_at").isoformat()
+                            if document.get("modified_at")
+                            else None
+                        ),
+                    }
+                )
+        results.sort(key=lambda item: item.get("path", ""))
+        return results
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        return run_async_safely(self.aupload_files(files))
+
+    async def aupload_files(
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
+        responses: list[FileUploadResponse] = []
+        for path, content in files:
+            try:
+                await self._put_file_data(
+                    path,
+                    _make_text_file_data(content.decode("utf-8", errors="replace")),
+                    update_modified=False,
+                )
+                responses.append(FileUploadResponse(path=path, error=None))
+            except Exception:
+                responses.append(FileUploadResponse(path=path, error="invalid_path"))
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        return run_async_safely(self.adownload_files(paths))
+
+    async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        responses: list[FileDownloadResponse] = []
+        for path in paths:
+            try:
+                data = await self._get_file_data(path)
+                if data is None:
+                    responses.append(
+                        FileDownloadResponse(path=path, content=None, error="file_not_found")
+                    )
+                    continue
+                content = "\n".join(data.get("content", [])).encode("utf-8")
+                responses.append(FileDownloadResponse(path=path, content=content, error=None))
+            except Exception:
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="invalid_path")
+                )
+        return responses
+
+
+# =============================================================================
+# Redis / Valkey Backend
+# =============================================================================
+
+
+@dataclass
+class RedisConfig:
+    """Configuration for Redis/Valkey storage."""
+
+    url: str = "redis://localhost:6379/0"
+    prefix: str = ""
+    namespace: str = "deepagents"
+
+
+class RedisBackend(BackendProtocol):
+    """Redis/Valkey backend for Deep Agents file operations."""
+
+    def __init__(self, config: RedisConfig) -> None:
+        self._config = config
+        self._prefix = config.prefix.strip("/")
+        if self._prefix:
+            self._prefix += "/"
+        self._client = redis.from_url(config.url, decode_responses=False)
+        self._namespace = config.namespace
+        self._index_key = f"{self._namespace}:__index__"
+
+    def _storage_path(self, path: str) -> str:
+        return f"{self._prefix}{path.lstrip('/')}"
+
+    def _virtual_path(self, storage_path: str) -> str:
+        if self._prefix and storage_path.startswith(self._prefix):
+            storage_path = storage_path[len(self._prefix) :]
+        return _normalize_virtual_path(storage_path)
+
+    def _data_key(self, path: str) -> str:
+        return f"{self._namespace}:file:{self._storage_path(path)}"
+
+    async def close(self) -> None:
+        """Close the Redis client."""
+        await self._client.aclose()
+
+    async def _get_file_data(self, path: str) -> dict[str, Any] | None:
+        payload = await self._client.get(self._data_key(path))
+        if payload is None:
+            return None
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8")
+        return json.loads(payload)
+
+    async def _put_file_data(
+        self,
+        path: str,
+        data: dict[str, Any],
+        *,
+        update_modified: bool = True,
+    ) -> None:
+        if update_modified:
+            data["modified_at"] = _utcnow_iso()
+        storage_path = self._storage_path(path)
+        await self._client.set(
+            f"{self._namespace}:file:{storage_path}",
+            json.dumps(data).encode("utf-8"),
+        )
+        await self._client.sadd(self._index_key, storage_path)
+
+    async def _exists(self, path: str) -> bool:
+        return bool(await self._client.exists(self._data_key(path)))
+
+    async def _list_paths(self, path: str = "/") -> list[tuple[str, int | None, str | None]]:
+        storage_prefix = self._storage_path(path)
+        members = await self._client.smembers(self._index_key)
+        storage_paths = sorted(
+            (
+                member.decode("utf-8") if isinstance(member, bytes) else str(member)
+                for member in members
+            ),
+            key=str,
+        )
+        matching = [
+            storage_path
+            for storage_path in storage_paths
+            if storage_path.startswith(storage_prefix)
+        ]
+        payloads = await self._client.mget(
+            [f"{self._namespace}:file:{storage_path}" for storage_path in matching]
+        )
+
+        results: list[tuple[str, int | None, str | None]] = []
+        for storage_path, payload in zip(matching, payloads, strict=False):
+            if payload is None:
+                continue
+            if isinstance(payload, bytes):
+                payload = payload.decode("utf-8")
+            data = json.loads(payload)
+            results.append(
+                (
+                    self._virtual_path(storage_path),
+                    len(data.get("content", [])),
+                    data.get("modified_at"),
+                )
+            )
+        return results
+
+    def ls_info(self, path: str) -> list[FileInfo]:
+        return run_async_safely(self.als_info(path))
+
+    async def als_info(self, path: str) -> list[FileInfo]:
+        return _build_direct_listing(path, await self._list_paths(path))
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return run_async_safely(self.aread(file_path, offset, limit))
+
+    async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        return _read_text_payload(file_path, await self._get_file_data(file_path), offset, limit)
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        return run_async_safely(self.awrite(file_path, content))
+
+    async def awrite(self, file_path: str, content: str) -> WriteResult:
+        if await self._exists(file_path):
+            return WriteResult(
+                error=f"Cannot write to {file_path} because it already exists. "
+                "Read and then make an edit, or write to a new path."
+            )
+
+        try:
+            await self._put_file_data(file_path, _make_text_file_data(content), update_modified=False)
+            return WriteResult(path=file_path, files_update=None)
+        except Exception as exc:
+            return WriteResult(error=f"Error writing file '{file_path}': {exc}")
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        return run_async_safely(
+            self.aedit(file_path, old_string, new_string, replace_all)
+        )
+
+    async def aedit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        updated, occurrences, error = _edit_text_payload(
+            await self._get_file_data(file_path),
+            old_string=old_string,
+            new_string=new_string,
+            replace_all=replace_all,
+        )
+        if error == "file_not_found":
+            return EditResult(error=f"Error: File '{file_path}' not found")
+        if error:
+            return EditResult(error=error)
+
+        try:
+            await self._put_file_data(file_path, updated or {})
+            return EditResult(path=file_path, files_update=None, occurrences=occurrences or 0)
+        except Exception as exc:
+            return EditResult(error=f"Error editing file '{file_path}': {exc}")
+
+    def grep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        return run_async_safely(self.agrep_raw(pattern, path, glob))
+
+    async def agrep_raw(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> list[GrepMatch] | str:
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"Invalid regex pattern: {exc}"
+
+        matches: list[GrepMatch] = []
+        for virtual_path, _size, _modified in await self._list_paths(path or "/"):
+            filename = PurePosixPath(virtual_path).name
+            if glob and not wcglob.globmatch(filename, glob, flags=wcglob.BRACE):
+                continue
+            data = await self._get_file_data(virtual_path)
+            if data is None:
+                continue
+            for line_num, line in enumerate(data.get("content", []), 1):
+                if regex.search(line):
+                    matches.append({"path": virtual_path, "line": line_num, "text": line})
+        return matches
+
+    def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        return run_async_safely(self.aglob_info(pattern, path))
+
+    async def aglob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+        results: list[FileInfo] = []
+        for virtual_path, size, modified_at in await self._list_paths(path):
+            if _matches_glob(pattern, path, virtual_path):
+                results.append(
+                    {
+                        "path": virtual_path,
+                        "is_dir": False,
+                        "size": size or 0,
+                        "modified_at": modified_at,
+                    }
+                )
+        results.sort(key=lambda item: item.get("path", ""))
+        return results
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        return run_async_safely(self.aupload_files(files))
+
+    async def aupload_files(
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
+        responses: list[FileUploadResponse] = []
+        for path, content in files:
+            try:
+                await self._put_file_data(
+                    path,
+                    _make_text_file_data(content.decode("utf-8", errors="replace")),
+                    update_modified=False,
+                )
+                responses.append(FileUploadResponse(path=path, error=None))
+            except Exception:
+                responses.append(FileUploadResponse(path=path, error="invalid_path"))
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        return run_async_safely(self.adownload_files(paths))
+
+    async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        responses: list[FileDownloadResponse] = []
+        for path in paths:
+            try:
+                data = await self._get_file_data(path)
+                if data is None:
+                    responses.append(
+                        FileDownloadResponse(path=path, content=None, error="file_not_found")
+                    )
+                    continue
+                content = "\n".join(data.get("content", [])).encode("utf-8")
+                responses.append(FileDownloadResponse(path=path, content=content, error=None))
+            except Exception:
+                responses.append(
+                    FileDownloadResponse(path=path, content=None, error="invalid_path")
+                )
         return responses

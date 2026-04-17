@@ -3,15 +3,32 @@ Pytest configuration and fixtures for deepagents-backends tests.
 """
 
 import asyncio
+import json
 import os
+import socket
 import sys
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
 
-from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
+from deepagents_backends import (
+    AzureBlobBackend,
+    AzureBlobConfig,
+    GCSBackend,
+    GCSConfig,
+    MongoDBBackend,
+    MongoDBConfig,
+    PostgresBackend,
+    PostgresConfig,
+    RedisBackend,
+    RedisConfig,
+    S3Backend,
+    S3Config,
+)
 from tests.common.scalability import (
     INTEGRATION_FILES_PER_DIR,
     INTEGRATION_FLAT_FILES,
@@ -36,6 +53,10 @@ def pytest_configure(config: Any) -> None:
     config.addinivalue_line("markers", "integration: Integration tests (require Docker)")
     config.addinivalue_line("markers", "s3: Tests requiring S3/MinIO")
     config.addinivalue_line("markers", "postgres: Tests requiring PostgreSQL")
+    config.addinivalue_line("markers", "azure: Tests requiring Azure Blob Storage / Azurite")
+    config.addinivalue_line("markers", "gcs: Tests requiring Google Cloud Storage / fake-gcs-server")
+    config.addinivalue_line("markers", "mongodb: Tests requiring MongoDB")
+    config.addinivalue_line("markers", "redis: Tests requiring Redis/Valkey")
 
 
 def pytest_collection_modifyitems(config: Any, items: list[Any]) -> None:
@@ -193,7 +214,6 @@ def postgres_url(docker_services: Any, docker_ip: str) -> tuple[str, int]:
 
 def _check_postgres_ready(host: str, port: int) -> bool:
     """Check if PostgreSQL is ready."""
-    import socket
     try:
         sock = socket.create_connection((host, port), timeout=1)
         sock.close()
@@ -236,6 +256,226 @@ async def postgres_backend(
 
 
 # =============================================================================
+# Common readiness helpers
+# =============================================================================
+
+
+def _check_tcp_ready(host: str, port: int) -> bool:
+    """Check whether a TCP service is accepting connections."""
+    try:
+        sock = socket.create_connection((host, port), timeout=1)
+        sock.close()
+        return True
+    except (OSError, ConnectionRefusedError):
+        return False
+
+
+# =============================================================================
+# Azure Blob / Azurite Fixtures
+# =============================================================================
+
+
+AZURITE_ACCOUNT_NAME = "devstoreaccount1"
+AZURITE_ACCOUNT_KEY = (
+    "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+    "K1SZFPTOtr/KBHBeksoGMGw=="
+)
+
+
+@pytest.fixture(scope="session")
+def azure_connection_string(docker_services: Any, docker_ip: str) -> str:
+    """Build an Azurite connection string after the blob endpoint is ready."""
+    port = docker_services.port_for("azurite", 10000)
+    endpoint = f"http://{docker_ip}:{port}/{AZURITE_ACCOUNT_NAME}"
+
+    docker_services.wait_until_responsive(
+        timeout=30.0,
+        pause=1.0,
+        check=lambda: _check_tcp_ready(docker_ip, port),
+    )
+
+    return (
+        "DefaultEndpointsProtocol=http;"
+        f"AccountName={AZURITE_ACCOUNT_NAME};"
+        f"AccountKey={AZURITE_ACCOUNT_KEY};"
+        f"BlobEndpoint={endpoint};"
+    )
+
+
+@pytest.fixture
+async def azure_blob_config(azure_connection_string: str) -> AzureBlobConfig:
+    """AzureBlobConfig for Azurite with a unique prefix per test."""
+    config = AzureBlobConfig(
+        container="test-container",
+        prefix=f"test-run-{uuid.uuid4().hex[:8]}",
+        connection_string=azure_connection_string,
+    )
+    backend = AzureBlobBackend(config)
+    await backend.ensure_container()
+    await backend.close()
+    return config
+
+
+@pytest.fixture
+async def azure_blob_backend(
+    azure_blob_config: AzureBlobConfig,
+) -> AsyncGenerator[AzureBlobBackend, None]:
+    """AzureBlobBackend instance for testing."""
+    backend = AzureBlobBackend(azure_blob_config)
+    yield backend
+    await backend.close()
+
+
+# =============================================================================
+# GCS / fake-gcs-server Fixtures
+# =============================================================================
+
+
+def _check_fake_gcs_ready(api_root: str) -> bool:
+    """Check whether fake-gcs-server is accepting JSON API requests."""
+    try:
+        with urllib.request.urlopen(f"{api_root}/storage/v1/b", timeout=1):
+            return True
+    except Exception:
+        return False
+
+
+def _ensure_fake_gcs_bucket(api_root: str, bucket_name: str) -> None:
+    """Create a fake-gcs-server bucket if it does not already exist."""
+    request = urllib.request.Request(
+        f"{api_root}/storage/v1/b?project=test-project",
+        data=json.dumps({"name": bucket_name}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5):
+            return
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            return
+        raise
+
+
+@pytest.fixture(scope="session")
+def gcs_api_root(docker_services: Any, docker_ip: str) -> str:
+    """Get the fake GCS JSON API root and create the shared test bucket."""
+    port = docker_services.port_for("fake-gcs-server", 4443)
+    api_root = f"http://{docker_ip}:{port}"
+
+    docker_services.wait_until_responsive(
+        timeout=30.0,
+        pause=1.0,
+        check=lambda: _check_fake_gcs_ready(api_root),
+    )
+    _ensure_fake_gcs_bucket(api_root, "test-bucket")
+    return api_root
+
+
+@pytest.fixture
+def gcs_config(gcs_api_root: str) -> GCSConfig:
+    """GCSConfig for fake-gcs-server with a unique prefix per test."""
+    return GCSConfig(
+        bucket="test-bucket",
+        prefix=f"test-run-{uuid.uuid4().hex[:8]}",
+        api_root=gcs_api_root,
+    )
+
+
+@pytest.fixture
+async def gcs_backend(gcs_config: GCSConfig) -> AsyncGenerator[GCSBackend, None]:
+    """GCSBackend instance for testing."""
+    backend = GCSBackend(gcs_config)
+    yield backend
+    await backend.close()
+
+
+# =============================================================================
+# MongoDB Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def mongodb_url(docker_services: Any, docker_ip: str) -> str:
+    """Get a MongoDB connection URI after the service is ready."""
+    port = docker_services.port_for("mongodb", 27017)
+
+    docker_services.wait_until_responsive(
+        timeout=30.0,
+        pause=1.0,
+        check=lambda: _check_tcp_ready(docker_ip, port),
+    )
+    return f"mongodb://{docker_ip}:{port}"
+
+
+@pytest.fixture
+def mongodb_config(mongodb_url: str) -> MongoDBConfig:
+    """MongoDBConfig for test instance."""
+    return MongoDBConfig(
+        connection_uri=mongodb_url,
+        database="deepagents_test",
+        collection=f"test_files_{uuid.uuid4().hex[:8]}",
+    )
+
+
+@pytest.fixture
+async def mongodb_backend(
+    mongodb_config: MongoDBConfig,
+) -> AsyncGenerator[MongoDBBackend, None]:
+    """MongoDBBackend instance for testing."""
+    backend = MongoDBBackend(mongodb_config)
+    await backend.initialize()
+    yield backend
+    await backend._collection.drop()
+    await backend.close()
+
+
+# =============================================================================
+# Redis / Valkey Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def redis_url(docker_services: Any, docker_ip: str) -> str:
+    """Get a Redis/Valkey connection URL after the service is ready."""
+    port = docker_services.port_for("valkey", 6379)
+
+    docker_services.wait_until_responsive(
+        timeout=30.0,
+        pause=1.0,
+        check=lambda: _check_tcp_ready(docker_ip, port),
+    )
+    return f"redis://{docker_ip}:{port}/0"
+
+
+@pytest.fixture
+def redis_config(redis_url: str) -> RedisConfig:
+    """RedisConfig for test instance."""
+    return RedisConfig(
+        url=redis_url,
+        prefix=f"test-run-{uuid.uuid4().hex[:8]}",
+        namespace=f"test-ns-{uuid.uuid4().hex[:8]}",
+    )
+
+
+@pytest.fixture
+async def redis_backend(redis_config: RedisConfig) -> AsyncGenerator[RedisBackend, None]:
+    """RedisBackend instance for testing."""
+    backend = RedisBackend(redis_config)
+    yield backend
+    members = await backend._client.smembers(backend._index_key)
+    data_keys = []
+    for member in members:
+        if isinstance(member, bytes):
+            member = member.decode("utf-8")
+        data_keys.append(f"{backend._namespace}:file:{member}")
+    if data_keys:
+        await backend._client.delete(*data_keys)
+    await backend._client.delete(backend._index_key)
+    await backend.close()
+
+
+# =============================================================================
 # Unit Test Fixtures (no external dependencies)
 # =============================================================================
 
@@ -254,6 +494,31 @@ def s3_config_unit() -> S3Config:
 
 
 @pytest.fixture
+def azure_blob_config_unit() -> AzureBlobConfig:
+    """AzureBlobConfig for unit tests (won't connect)."""
+    return AzureBlobConfig(
+        container="unit-test-container",
+        prefix="unit-test",
+        connection_string=(
+            "DefaultEndpointsProtocol=http;"
+            f"AccountName={AZURITE_ACCOUNT_NAME};"
+            f"AccountKey={AZURITE_ACCOUNT_KEY};"
+            f"BlobEndpoint=http://127.0.0.1:10000/{AZURITE_ACCOUNT_NAME};"
+        ),
+    )
+
+
+@pytest.fixture
+def gcs_config_unit() -> GCSConfig:
+    """GCSConfig for unit tests (won't connect)."""
+    return GCSConfig(
+        bucket="unit-test-bucket",
+        prefix="unit-test",
+        api_root="http://127.0.0.1:4443",
+    )
+
+
+@pytest.fixture
 def postgres_config_unit() -> PostgresConfig:
     """PostgresConfig for unit tests (won't connect)."""
     return PostgresConfig(
@@ -263,6 +528,27 @@ def postgres_config_unit() -> PostgresConfig:
         user="test",
         password="test",
         table="unit_files",
+    )
+
+
+@pytest.fixture
+def mongodb_config_unit() -> MongoDBConfig:
+    """MongoDBConfig for unit tests (won't connect)."""
+    return MongoDBConfig(
+        connection_uri="mongodb://localhost:27018",
+        database="unit_test",
+        collection="unit_files",
+        prefix="unit-test",
+    )
+
+
+@pytest.fixture
+def redis_config_unit() -> RedisConfig:
+    """RedisConfig for unit tests (won't connect)."""
+    return RedisConfig(
+        url="redis://localhost:6380/0",
+        prefix="unit-test",
+        namespace="unit-test-ns",
     )
 
 
