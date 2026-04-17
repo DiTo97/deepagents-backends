@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from deepagents_backends import PostgresBackend, PostgresConfig, S3Backend, S3Config
-from tests.scalability import (
+from tests.common.scalability import (
     INTEGRATION_FILES_PER_DIR,
     INTEGRATION_FLAT_FILES,
     INTEGRATION_NESTED_DIRS,

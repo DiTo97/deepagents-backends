@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from tests.scalability import (
+from tests.common.scalability import (
     GLOB_MATCH_SUFFIX,
     GLOB_NOMATCH_SUFFIX,
     GREP_MATCH_LINE,

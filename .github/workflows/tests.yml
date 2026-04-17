@@ -3,8 +3,18 @@ name: Tests
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "uv.lock"
+      - "docker-compose.yml"
+      - "tests/**"
+      - "src/**"
   push:
     branches: [main]
+    paths:
+      - "uv.lock"
+      - "docker-compose.yml"
+      - "tests/**"
+      - "src/**"
 
 jobs:
   lint:
