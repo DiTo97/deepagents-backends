@@ -2005,8 +2005,8 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
         "This folder contains a reproducible **realistic trace-based benchmark** for seven "
         "file-oriented backends:",
         "",
-        "- `FilesystemBackend` from `deepagents`, scoped to a dedicated root directory with
-        `virtual_mode=True`.",
+        "- `FilesystemBackend` from `deepagents`, scoped to a dedicated root directory "
+        "with `virtual_mode=True`.",
         "- `PostgresBackend` from this repository, backed by Dockerized PostgreSQL.",
         "- `S3Backend` from this repository, backed by Dockerized MinIO.",
         "- `AzureBlobBackend` from this repository, backed by Dockerized Azurite.",
