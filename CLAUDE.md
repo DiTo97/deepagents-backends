@@ -25,6 +25,15 @@ Useful repository files:
 - `tests/`
 - `benchmark/run.py`
 - `benchmark/README.md`
+- `benchmark/web/`
+- `.github/workflows/pages.yml`
+
+Assistant notes:
+
+- Prefer repository-relative commands and paths in docs; do not hardcode sandbox-specific `/home/...` paths.
+- The benchmark docs are generated from `benchmark/run.py`; keep `benchmark/README.md` aligned with the generator.
+- The benchmark dashboard reads `benchmark/results/latest.json` from the static assets in `benchmark/web/`.
+- If you update benchmark presentation or deployment behavior, review both `benchmark/web/` and `.github/workflows/pages.yml`.
 
 Common development commands:
 

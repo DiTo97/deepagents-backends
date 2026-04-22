@@ -1,8 +1,8 @@
 """
-Deep Agents Remote Backends
+Deep Agents Remote Backends.
 
-S3, PostgreSQL, Azure Blob, GCS, MongoDB, and Redis/Valkey backend
-implementations for LangChain's Deep Agents.
+Remote storage backends for Deep Agents across S3, PostgreSQL, Azure Blob,
+GCS, MongoDB, and Redis/Valkey.
 """
 
 from __future__ import annotations

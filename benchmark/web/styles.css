@@ -1,0 +1,121 @@
+:root {
+  color-scheme: dark;
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.panel {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.7));
+  border-radius: 1.5rem;
+  box-shadow: 0 20px 80px rgba(2, 6, 23, 0.35);
+}
+
+.button-primary,
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  padding: 0.7rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.button-primary {
+  background: linear-gradient(135deg, rgb(14 165 233), rgb(59 130 246));
+  color: white;
+}
+
+.button-primary:hover {
+  filter: brightness(1.08);
+}
+
+.button-secondary {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: rgb(226 232 240);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.button-secondary:hover {
+  border-color: rgba(125, 211, 252, 0.5);
+  color: white;
+}
+
+.metric-card {
+  border-radius: 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.62);
+  padding: 1rem;
+}
+
+.metric-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(125 211 252);
+}
+
+.metric-value {
+  margin-top: 0.5rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: white;
+}
+
+.metric-subtext {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  color: rgb(148 163 184);
+}
+
+.backend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.72);
+  padding: 1.25rem;
+}
+
+.backend-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.45);
+  padding: 0.6rem;
+}
+
+.backend-tag {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 9999px;
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  background: rgba(14, 165, 233, 0.08);
+  padding: 0.28rem 0.7rem;
+  font-size: 0.8rem;
+  color: rgb(186 230 253);
+}
+
+.input-select {
+  appearance: none;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.88);
+  padding: 0.65rem 0.9rem;
+  color: rgb(226 232 240);
+}
+
+.input-select:focus {
+  outline: 2px solid rgba(56, 189, 248, 0.5);
+  outline-offset: 2px;
+}
+
+code {
+  color: rgb(191 219 254);
+}
