@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
-  ResponsiveContainer,
   Scatter,
   ScatterChart,
   Tooltip,
@@ -117,7 +116,11 @@ const RESOURCE_LINKS = [
   },
 ]
 
-const candidateResultsUrls = ['results/latest.json', './results/latest.json', '../results/latest.json']
+const candidateResultsUrls = (() => {
+  const path = window.location.pathname.replace(/index\.html$/, '')
+  const localRepoPath = path.endsWith('/benchmark/web/') || path.endsWith('/benchmark/web')
+  return localRepoPath ? ['../results/latest.json', 'results/latest.json'] : ['results/latest.json', '../results/latest.json']
+})()
 
 function mean(values) {
   if (!values.length) {
@@ -199,6 +202,41 @@ function ChartTooltip({ active, payload, label, formatter, suffix }) {
   )
 }
 
+function ChartSurface({ children, ready = true }) {
+  const [container, setContainer] = useState(null)
+  const [size, setSize] = useState({ width: 0, height: 0 })
+
+  useLayoutEffect(() => {
+    if (!container) {
+      return undefined
+    }
+
+    const updateSize = () => {
+      setSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      })
+    }
+
+    updateSize()
+
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(container)
+
+    return () => observer.disconnect()
+  }, [container])
+
+  return (
+    <div className="chart-frame" ref={setContainer}>
+      {ready && size.width > 0 && size.height > 0 ? (
+        children(size)
+      ) : (
+        <div className="chart-empty">Loading chart…</div>
+      )}
+    </div>
+  )
+}
+
 function App() {
   const [payload, setPayload] = useState(null)
   const [error, setError] = useState('')
@@ -227,7 +265,7 @@ function App() {
     }
   }, [])
 
-  const traces = payload?.traces ?? []
+  const traces = useMemo(() => payload?.traces ?? [], [payload])
 
   const summary = useMemo(() => {
     if (!payload) {
@@ -324,18 +362,8 @@ function App() {
     return Array.from(allOperations).sort()
   }, [traces])
 
-  useEffect(() => {
-    if (operations.length && !operations.includes(operation)) {
-      setOperation(operations[0])
-    }
-  }, [operation, operations])
-
-  useEffect(() => {
-    const allTraceIds = traces.map((trace) => trace.trace_id)
-    if (allTraceIds.length && !allTraceIds.includes(traceId)) {
-      setTraceId(allTraceIds[0])
-    }
-  }, [traceId, traces])
+  const selectedOperation = operations.includes(operation) ? operation : operations[0] ?? ''
+  const selectedTraceId = traces.some((trace) => trace.trace_id === traceId) ? traceId : traces[0]?.trace_id ?? ''
 
   const perOperationData = useMemo(
     () =>
@@ -344,17 +372,17 @@ function App() {
         backend: BACKEND_LABELS[backend],
         latency: mean(
           traces
-            .map((trace) => trace.backends[backend]?.per_op_stats?.[operation]?.p50)
+            .map((trace) => trace.backends[backend]?.per_op_stats?.[selectedOperation]?.p50)
             .filter((value) => typeof value === 'number'),
         ),
         fill: BACKEND_COLORS[backend],
       })),
-    [operation, traces],
+    [selectedOperation, traces],
   )
 
   const selectedTrace = useMemo(
-    () => traces.find((trace) => trace.trace_id === traceId) ?? traces[0] ?? null,
-    [traceId, traces],
+    () => traces.find((trace) => trace.trace_id === selectedTraceId) ?? traces[0] ?? null,
+    [selectedTraceId, traces],
   )
 
   const traceComparisonData = useMemo(() => {
@@ -389,6 +417,7 @@ function App() {
   const benchmarkMeta = payload
     ? `Generated ${new Date(payload.generated_at).toLocaleString()} • Python ${payload.environment.python_version} • ${payload.environment.platform}`
     : 'Loading benchmark snapshot…'
+  const chartsReady = Boolean(payload && selectedOperation && selectedTrace && averageLatencyData.length)
 
   return (
     <div className="app-shell">
@@ -538,9 +567,9 @@ function App() {
                   <p>Lower is better across the full realistic replay suite.</p>
                 </div>
               </div>
-              <div className="chart-frame">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={averageLatencyData} margin={{ top: 12, right: 12, left: -16, bottom: 12 }}>
+              <ChartSurface ready={chartsReady}>
+                {({ width, height }) => (
+                  <BarChart width={width} height={height} data={averageLatencyData} margin={{ top: 12, right: 12, left: -16, bottom: 12 }}>
                     <CartesianGrid stroke="rgba(148, 163, 184, 0.16)" vertical={false} />
                     <XAxis dataKey="backend" tickLine={false} axisLine={false} tick={{ fill: '#cbd5e1', fontSize: 12 }} />
                     <YAxis
@@ -556,8 +585,8 @@ function App() {
                       ))}
                     </Bar>
                   </BarChart>
-                </ResponsiveContainer>
-              </div>
+                )}
+              </ChartSurface>
             </article>
 
             <article className="panel chart-panel">
@@ -567,9 +596,9 @@ function App() {
                   <p>Find the balance between remote-storage speed and correctness retention.</p>
                 </div>
               </div>
-              <div className="chart-frame">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 12, right: 24, left: 0, bottom: 12 }}>
+              <ChartSurface ready={chartsReady}>
+                {({ width, height }) => (
+                  <ScatterChart width={width} height={height} margin={{ top: 12, right: 24, left: 0, bottom: 12 }}>
                     <CartesianGrid stroke="rgba(148, 163, 184, 0.16)" />
                     <XAxis
                       type="number"
@@ -596,8 +625,8 @@ function App() {
                       ))}
                     </Scatter>
                   </ScatterChart>
-                </ResponsiveContainer>
-              </div>
+                )}
+              </ChartSurface>
               <div className="chart-legend">
                 {correctnessScatterData.map((entry) => (
                   <span key={entry.key}>
@@ -618,7 +647,7 @@ function App() {
                 </div>
                 <label className="control">
                   <span>Operation</span>
-                  <select value={operation} onChange={(event) => setOperation(event.target.value)}>
+                  <select value={selectedOperation} onChange={(event) => setOperation(event.target.value)}>
                     {operations.map((opName) => (
                       <option key={opName} value={opName}>
                         {opName}
@@ -627,9 +656,9 @@ function App() {
                   </select>
                 </label>
               </div>
-              <div className="chart-frame">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={perOperationData} margin={{ top: 12, right: 12, left: -16, bottom: 12 }}>
+              <ChartSurface ready={chartsReady}>
+                {({ width, height }) => (
+                  <BarChart width={width} height={height} data={perOperationData} margin={{ top: 12, right: 12, left: -16, bottom: 12 }}>
                     <CartesianGrid stroke="rgba(148, 163, 184, 0.16)" vertical={false} />
                     <XAxis dataKey="backend" tickLine={false} axisLine={false} tick={{ fill: '#cbd5e1', fontSize: 12 }} />
                     <YAxis
@@ -645,8 +674,8 @@ function App() {
                       ))}
                     </Bar>
                   </BarChart>
-                </ResponsiveContainer>
-              </div>
+                )}
+              </ChartSurface>
             </article>
 
             <article className="panel chart-panel">
@@ -657,7 +686,7 @@ function App() {
                 </div>
                 <label className="control">
                   <span>Trace</span>
-                  <select value={selectedTrace?.trace_id ?? ''} onChange={(event) => setTraceId(event.target.value)}>
+                  <select value={selectedTraceId} onChange={(event) => setTraceId(event.target.value)}>
                     {traces.map((trace) => (
                       <option key={trace.trace_id} value={trace.trace_id}>
                         {trace.trace_id}
@@ -666,9 +695,9 @@ function App() {
                   </select>
                 </label>
               </div>
-              <div className="chart-frame">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={traceComparisonData} margin={{ top: 12, right: 12, left: -16, bottom: 12 }}>
+              <ChartSurface ready={chartsReady}>
+                {({ width, height }) => (
+                  <BarChart width={width} height={height} data={traceComparisonData} margin={{ top: 12, right: 12, left: -16, bottom: 12 }}>
                     <CartesianGrid stroke="rgba(148, 163, 184, 0.16)" vertical={false} />
                     <XAxis dataKey="backend" tickLine={false} axisLine={false} tick={{ fill: '#cbd5e1', fontSize: 12 }} />
                     <YAxis
@@ -684,8 +713,8 @@ function App() {
                       ))}
                     </Bar>
                   </BarChart>
-                </ResponsiveContainer>
-              </div>
+                )}
+              </ChartSurface>
             </article>
           </div>
 
