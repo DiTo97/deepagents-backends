@@ -1,7 +1,7 @@
 [project]
 name = "deepagents-backends"
 version = "0.3.0"
-description = "S3, PostgreSQL, Azure Blob, GCS, MongoDB, and Redis remote backends for LangChain Deep Agents"
+description = "Remote storage backends for Deep Agents across S3, PostgreSQL, Azure Blob, GCS, MongoDB, and Redis/Valkey"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

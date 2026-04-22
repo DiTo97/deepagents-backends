@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deep Agents Backends</title>
+    <meta
+      name="description"
+      content="Deep Agents Backends dashboard with repository overview, supported backends, architecture, and interactive benchmark charts."
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"
+      integrity="sha384-v5YF9xS+gLRWdvrQ0u/WRbCkjSIH0NjHIPe8tBL1ZRrmI7PiSH6LLdzs0aAIMCuh"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+      integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
+      crossorigin="anonymous"
+    ></script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
+    <div class="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,#0f172a,transparent_55%),radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.2),transparent_30%),linear-gradient(180deg,#020617,#0f172a)]"></div>
+    <header class="border-b border-white/10 backdrop-blur">
+      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <a href="#top" class="text-sm font-semibold tracking-[0.2em] text-sky-300 uppercase">Deep Agents Backends</a>
+        <nav class="hidden gap-6 text-sm text-slate-300 md:flex">
+          <a href="#overview" class="hover:text-white">Overview</a>
+          <a href="#backends" class="hover:text-white">Backends</a>
+          <a href="#benchmark" class="hover:text-white">Benchmark</a>
+          <a href="#deployment" class="hover:text-white">Deploy</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top" class="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-10 lg:py-14">
+      <section id="overview" class="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
+        <div class="panel p-8 lg:p-10">
+          <p class="mb-4 text-sm font-semibold uppercase tracking-[0.3em] text-sky-300">Persistent remote storage for Deep Agents</p>
+          <h1 class="max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            One package for S3, PostgreSQL, Azure Blob, GCS, MongoDB, and Redis/Valkey backends.
+          </h1>
+          <p class="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+            Deep Agents Backends extends <a class="text-sky-300 hover:text-sky-200" href="https://github.com/langchain-ai/deepagents">LangChain Deep Agents</a>
+            with production-ready remote storage backends, plus reproducible benchmarks and deployment-ready documentation.
+          </p>
+          <div class="mt-8 flex flex-wrap gap-3">
+            <a class="button-primary" href="https://pypi.org/project/deepagents-backends/">PyPI package</a>
+            <a class="button-secondary" href="https://github.com/DiTo97/deepagents-backends">GitHub repository</a>
+            <a class="button-secondary" href="https://github.com/langchain-ai/deepagents">Deep Agents upstream</a>
+          </div>
+          <dl id="summary-cards" class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></dl>
+        </div>
+
+        <div class="panel overflow-hidden">
+          <div class="border-b border-white/10 px-6 py-5">
+            <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-300">Repository map</p>
+            <h2 class="mt-2 text-2xl font-semibold text-white">What ships in this repo</h2>
+          </div>
+          <div class="space-y-4 px-6 py-6 text-sm leading-6 text-slate-300">
+            <div>
+              <p class="font-medium text-white">deepagents-backends</p>
+              <p>Python package, backend implementations, Docker-based integration environment, benchmark harness, and published dashboard.</p>
+            </div>
+            <div>
+              <p class="font-medium text-white">langchain-ai/deepagents</p>
+              <p>Source of the <code>BackendProtocol</code>, agent runtime, and local filesystem baseline used in the benchmark suite.</p>
+            </div>
+            <div>
+              <p class="font-medium text-white">Published artifacts</p>
+              <p><code>benchmark/results/latest.json</code> holds raw results; <code>benchmark/web/</code> renders the GitHub Pages site from those results.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="backends" class="space-y-6">
+        <div class="flex flex-col gap-2">
+          <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-300">Supported backends</p>
+          <h2 class="text-3xl font-semibold tracking-tight text-white">Choose the persistence model that fits the agent workflow</h2>
+        </div>
+        <div id="backend-grid" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+      </section>
+
+      <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div class="panel p-6">
+          <div class="flex flex-col gap-2 pb-5">
+            <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-300">Architecture</p>
+            <h2 class="text-2xl font-semibold text-white">How the package fits into Deep Agents</h2>
+          </div>
+          <img src="./assets/architecture.svg" alt="Architecture diagram for Deep Agents Backends" class="w-full rounded-2xl border border-white/10 bg-slate-950/70 p-3" />
+        </div>
+        <div id="deployment" class="panel p-6">
+          <div class="flex flex-col gap-2 pb-5">
+            <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-300">GitHub Pages deployment</p>
+            <h2 class="text-2xl font-semibold text-white">How this site is published</h2>
+          </div>
+          <ol class="space-y-3 text-sm leading-6 text-slate-300">
+            <li><span class="font-medium text-white">1.</span> Benchmark results are committed to <code>benchmark/results/latest.json</code>.</li>
+            <li><span class="font-medium text-white">2.</span> Static assets live in <code>benchmark/web/</code> and read the latest JSON at runtime.</li>
+            <li><span class="font-medium text-white">3.</span> The <code>pages.yml</code> workflow copies the web assets and results into a Pages artifact.</li>
+            <li><span class="font-medium text-white">4.</span> A push to <code>main</code> or a manual dispatch republishes the dashboard.</li>
+          </ol>
+          <div class="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm text-sky-100">
+            Tip: update the benchmark README with <code>uv run python benchmark/run.py --manage-services --write-readme</code>, then let the Pages workflow publish the visual dashboard.
+          </div>
+        </div>
+      </section>
+
+      <section id="benchmark" class="space-y-6">
+        <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-300">Benchmark explorer</p>
+            <h2 class="text-3xl font-semibold tracking-tight text-white">Visualize the latest committed benchmark run</h2>
+          </div>
+          <div id="benchmark-meta" class="text-sm text-slate-300"></div>
+        </div>
+
+        <div id="error-banner" class="hidden rounded-2xl border border-rose-400/30 bg-rose-400/10 px-5 py-4 text-sm text-rose-100"></div>
+
+        <div class="grid gap-6 xl:grid-cols-2">
+          <div class="panel p-6">
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h3 class="text-xl font-semibold text-white">Average median trace latency</h3>
+                <p class="mt-1 text-sm text-slate-400">Lower is better. This averages each backend's median latency across the full realistic replay suite.</p>
+              </div>
+            </div>
+            <canvas id="backend-latency-chart" height="320"></canvas>
+          </div>
+
+          <div class="panel p-6">
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h3 class="text-xl font-semibold text-white">Correctness vs latency</h3>
+                <p class="mt-1 text-sm text-slate-400">Quickly spot which backends stay fast while preserving result quality across the suite.</p>
+              </div>
+            </div>
+            <canvas id="correctness-chart" height="320"></canvas>
+          </div>
+        </div>
+
+        <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div class="panel p-6">
+            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 class="text-xl font-semibold text-white">Per-operation latency</h3>
+                <p class="mt-1 text-sm text-slate-400">P50 latency averaged across traces for a selected backend operation.</p>
+              </div>
+              <label class="flex items-center gap-3 text-sm text-slate-300">
+                Operation
+                <select id="op-select" class="input-select"></select>
+              </label>
+            </div>
+            <canvas id="operation-chart" height="320"></canvas>
+          </div>
+
+          <div class="panel p-6">
+            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 class="text-xl font-semibold text-white">Trace drill-down</h3>
+                <p class="mt-1 text-sm text-slate-400">Inspect backend medians for a single benchmark trace.</p>
+              </div>
+              <label class="flex items-center gap-3 text-sm text-slate-300">
+                Trace
+                <select id="trace-select" class="input-select"></select>
+              </label>
+            </div>
+            <canvas id="trace-chart" height="320"></canvas>
+          </div>
+        </div>
+
+        <div class="panel overflow-hidden">
+          <div class="flex flex-col gap-3 border-b border-white/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 class="text-xl font-semibold text-white">Trace summary table</h3>
+              <p class="mt-1 text-sm text-slate-400">Search or filter the realistic replay suite to compare individual traces.</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+              <input id="trace-search" type="search" placeholder="Search trace or fixture" class="input-select min-w-56" />
+              <select id="shape-filter" class="input-select min-w-44">
+                <option value="all">All shapes</option>
+              </select>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-white/10 text-left text-sm">
+              <thead class="bg-white/5 text-slate-300">
+                <tr>
+                  <th class="px-6 py-3 font-medium">Trace</th>
+                  <th class="px-6 py-3 font-medium">Shape</th>
+                  <th class="px-6 py-3 font-medium">Fixture</th>
+                  <th class="px-6 py-3 font-medium">Fastest</th>
+                  <th class="px-6 py-3 font-medium">Steps</th>
+                </tr>
+              </thead>
+              <tbody id="trace-table-body" class="divide-y divide-white/5 text-slate-200"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

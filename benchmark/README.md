@@ -12,8 +12,9 @@ This folder contains a reproducible **realistic trace-based benchmark** for seve
 
 ## How to run
 
+From the repository root:
+
 ```bash
-cd /home/runner/work/deepagents-backends/deepagents-backends
 uv run python benchmark/run.py --manage-services --write-readme
 ```
 
@@ -374,4 +375,4 @@ Shape: vlong·verification-heavy · Fixture: `repo_like_small` · Steps: 20
 - These numbers come from the benchmark VM and should be treated as comparative, not absolute throughput guarantees.
 - The built-in filesystem backend is the local baseline; the remote backends trade latency for different persistence semantics.
 - Raw machine-readable results live in `benchmark/results/latest.json`.
-
+- The interactive dashboard published via GitHub Pages is sourced from `benchmark/web/`.
