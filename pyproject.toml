@@ -1,13 +1,17 @@
 [project]
 name = "deepagents-backends"
-version = "0.2.0"
-description = "S3 and PostgreSQL remote backends for LangChain Deep Agents"
+version = "0.3.0"
+description = "S3, PostgreSQL, Azure Blob, GCS, MongoDB, and Redis remote backends for LangChain Deep Agents"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aioboto3>=15.5.0",
+    "azure-storage-blob>=12.28.0",
     "deepagents>=0.5.2",
+    "gcloud-aio-storage>=9.6.4",
+    "motor>=3.7.1",
     "psycopg[binary,pool]>=3.3.2",
+    "redis>=7.4.0",
     "wcmatch>=10.1",
 ]
 
@@ -25,6 +29,7 @@ dev = [
     "pytest-cov>=7.0.0",
     "pytest-docker>=3.2.5",
     "ruff>=0.15.10",
+    "types-redis>=4.6.0",
 ]
 
 [tool.pytest.ini_options]
@@ -36,6 +41,10 @@ markers = [
     "integration: Integration tests (require Docker services)",
     "s3: Tests requiring S3/MinIO",
     "postgres: Tests requiring PostgreSQL",
+    "azure: Tests requiring Azure Blob Storage / Azurite",
+    "gcs: Tests requiring Google Cloud Storage / fake-gcs-server",
+    "mongodb: Tests requiring MongoDB",
+    "redis: Tests requiring Redis/Valkey",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

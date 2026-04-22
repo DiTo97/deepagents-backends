@@ -41,3 +41,51 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000:10000"
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const net=require('net');const s=net.connect(10000,'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  fake-gcs-server:
+    image: fsouza/fake-gcs-server:latest
+    ports:
+      - "4443:4443"
+    command: -scheme http -port 4443
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4443/storage/v1/b"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
