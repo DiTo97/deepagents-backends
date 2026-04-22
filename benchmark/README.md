@@ -375,4 +375,4 @@ Shape: vlong·verification-heavy · Fixture: `repo_like_small` · Steps: 20
 - These numbers come from the benchmark VM and should be treated as comparative, not absolute throughput guarantees.
 - The built-in filesystem backend is the local baseline; the remote backends trade latency for different persistence semantics.
 - Raw machine-readable results live in `benchmark/results/latest.json`.
-- The interactive dashboard published via GitHub Pages is sourced from `benchmark/web/`.
+- The interactive dashboard source lives in `benchmark/dashboard/` and is compiled into `benchmark/web/` for static publishing.

@@ -1,0 +1,42 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="720" rx="36" fill="#020617"/>
+  <rect x="36" y="36" width="1128" height="648" rx="28" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
+  <text x="88" y="118" fill="#E2E8F0" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700">Deep Agents Backends architecture</text>
+  <text x="88" y="154" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="20">Persistent storage adapters that implement the Deep Agents BackendProtocol</text>
+
+  <rect x="88" y="212" width="280" height="148" rx="24" fill="#082F49" stroke="#38BDF8" stroke-width="2"/>
+  <text x="120" y="262" fill="#E0F2FE" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">Deep Agents runtime</text>
+  <text x="120" y="302" fill="#BAE6FD" font-family="Inter, Arial, sans-serif" font-size="20">Agent graph</text>
+  <text x="120" y="332" fill="#BAE6FD" font-family="Inter, Arial, sans-serif" font-size="20">Tools + prompts</text>
+
+  <rect x="456" y="212" width="288" height="148" rx="24" fill="#172554" stroke="#60A5FA" stroke-width="2"/>
+  <text x="492" y="262" fill="#DBEAFE" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">BackendProtocol</text>
+  <text x="492" y="302" fill="#BFDBFE" font-family="Inter, Arial, sans-serif" font-size="20">read / write / edit</text>
+  <text x="492" y="332" fill="#BFDBFE" font-family="Inter, Arial, sans-serif" font-size="20">glob / grep / upload</text>
+
+  <path d="M368 286H456" stroke="#7DD3FC" stroke-width="5" stroke-linecap="round"/>
+  <path d="M744 286H822" stroke="#7DD3FC" stroke-width="5" stroke-linecap="round"/>
+
+  <rect x="822" y="112" width="278" height="96" rx="22" fill="#3F1D0D" stroke="#FB923C" stroke-width="2"/>
+  <text x="854" y="164" fill="#FFEDD5" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">S3 / MinIO</text>
+
+  <rect x="822" y="226" width="278" height="96" rx="22" fill="#1E293B" stroke="#94A3B8" stroke-width="2"/>
+  <text x="854" y="278" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">PostgreSQL</text>
+
+  <rect x="822" y="340" width="278" height="96" rx="22" fill="#0F3B63" stroke="#60A5FA" stroke-width="2"/>
+  <text x="854" y="392" fill="#E0F2FE" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">Azure Blob / GCS</text>
+
+  <rect x="822" y="454" width="278" height="96" rx="22" fill="#052E2B" stroke="#34D399" stroke-width="2"/>
+  <text x="854" y="506" fill="#D1FAE5" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">MongoDB / Redis</text>
+
+  <path d="M744 286C786 286 782 160 822 160" stroke="#7DD3FC" stroke-width="4" stroke-linecap="round"/>
+  <path d="M744 286H822" stroke="#7DD3FC" stroke-width="4" stroke-linecap="round"/>
+  <path d="M744 286C786 286 782 388 822 388" stroke="#7DD3FC" stroke-width="4" stroke-linecap="round"/>
+  <path d="M744 286C786 286 782 502 822 502" stroke="#7DD3FC" stroke-width="4" stroke-linecap="round"/>
+
+  <rect x="88" y="440" width="656" height="164" rx="24" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <text x="124" y="492" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">Benchmark + docs pipeline</text>
+  <text x="124" y="534" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="21">benchmark/run.py generates benchmark/results/latest.json and benchmark/README.md</text>
+  <text x="124" y="568" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="21">benchmark/web reads the JSON and renders interactive charts</text>
+  <text x="124" y="602" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="21">GitHub Pages publishes the landing page and latest benchmark snapshot</text>
+</svg>

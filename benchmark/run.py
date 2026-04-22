@@ -2168,8 +2168,8 @@ def build_markdown_report(payload: dict[str, Any]) -> str:
             "- The built-in filesystem backend is the local baseline; the remote backends "
             "trade latency for different persistence semantics.",
             f"- Raw machine-readable results live in `{payload['results_path']}`.",
-            "- The interactive dashboard published via GitHub Pages is sourced from "
-            "`benchmark/web/`.",
+            "- The interactive dashboard source lives in `benchmark/dashboard/` and is "
+            "compiled into `benchmark/web/` for static publishing.",
             "",
         ]
     )
