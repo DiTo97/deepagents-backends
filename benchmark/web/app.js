@@ -126,8 +126,9 @@ function renderBackendCards() {
 function renderSummaryCards(payload) {
   const traces = payload.traces;
   const averageLatency = backendValues(traces, (backend) => backend?.median_total_ms);
-  const bestLatency = Math.min(...averageLatency.filter((value) => value > 0));
-  const fastestBackend = BACKEND_LABELS[BACKEND_ORDER[averageLatency.indexOf(bestLatency)]];
+  const positiveLatencies = averageLatency.filter((value) => value > 0);
+  const bestLatency = positiveLatencies.length ? Math.min(...positiveLatencies) : null;
+  const fastestBackend = bestLatency !== null ? BACKEND_LABELS[BACKEND_ORDER[averageLatency.indexOf(bestLatency)]] : "N/A";
   const cards = [
     {
       label: "Benchmark suite",
@@ -136,13 +137,13 @@ function renderSummaryCards(payload) {
     },
     {
       label: "Supported backends",
-      value: "6",
+      value: `${BACKEND_META.length}`,
       subtext: "remote backends plus filesystem baseline",
     },
     {
       label: "Fastest average",
       value: fastestBackend,
-      subtext: `${formatMs(bestLatency)} average median latency`,
+      subtext: bestLatency !== null ? `${formatMs(bestLatency)} average median latency` : "no data available",
     },
     {
       label: "Run profile",
@@ -299,7 +300,14 @@ function renderOperationChart(payload) {
     new Set(payload.traces.flatMap((trace) => Object.values(trace.backends).flatMap((backend) => Object.keys(backend.per_op_stats || {})))),
   ).sort();
 
-  opSelect.innerHTML = operations.map((op) => `<option value="${op}">${op}</option>`).join("");
+  opSelect.replaceChildren(
+    ...operations.map((op) => {
+      const option = document.createElement("option");
+      option.value = op;
+      option.textContent = op;
+      return option;
+    }),
+  );
 
   const update = () => {
     const op = opSelect.value;
@@ -325,9 +333,14 @@ function renderOperationChart(payload) {
 
 function renderTraceChart(payload) {
   const traceSelect = document.getElementById("trace-select");
-  traceSelect.innerHTML = payload.traces
-    .map((trace) => `<option value="${trace.trace_id}">${trace.trace_id}</option>`)
-    .join("");
+  traceSelect.replaceChildren(
+    ...payload.traces.map((trace) => {
+      const option = document.createElement("option");
+      option.value = trace.trace_id;
+      option.textContent = trace.trace_id;
+      return option;
+    }),
+  );
 
   const update = () => {
     const selectedTrace = payload.traces.find((trace) => trace.trace_id === traceSelect.value) || payload.traces[0];
@@ -350,7 +363,12 @@ function renderTraceTable(payload) {
   const shapeFilter = document.getElementById("shape-filter");
   const tableBody = document.getElementById("trace-table-body");
   const shapes = Array.from(new Set(payload.traces.map((trace) => trace.tags.shape))).sort();
-  shapeFilter.innerHTML += shapes.map((shape) => `<option value="${shape}">${shape}</option>`).join("");
+  for (const shape of shapes) {
+    const option = document.createElement("option");
+    option.value = shape;
+    option.textContent = shape;
+    shapeFilter.appendChild(option);
+  }
 
   const draw = () => {
     const query = searchInput.value.trim().toLowerCase();
@@ -361,20 +379,35 @@ function renderTraceTable(payload) {
       return matchesQuery && matchesShape;
     });
 
-    tableBody.innerHTML = rows
-      .map((trace) => {
+    tableBody.replaceChildren(
+      ...rows.map((trace) => {
         const fastest = findFastestBackend(trace);
-        return `
-          <tr>
-            <td class="px-6 py-4 font-medium text-white">${trace.trace_id}</td>
-            <td class="px-6 py-4 text-slate-300">${trace.tags.shape}</td>
-            <td class="px-6 py-4 text-slate-300">${trace.fixture_id}</td>
-            <td class="px-6 py-4 text-sky-300">${BACKEND_LABELS[fastest] ?? "-"}</td>
-            <td class="px-6 py-4 text-slate-300">${trace.step_count}</td>
-          </tr>
-        `;
-      })
-      .join("");
+        const tr = document.createElement("tr");
+
+        const tdId = document.createElement("td");
+        tdId.className = "px-6 py-4 font-medium text-white";
+        tdId.textContent = trace.trace_id;
+
+        const tdShape = document.createElement("td");
+        tdShape.className = "px-6 py-4 text-slate-300";
+        tdShape.textContent = trace.tags.shape;
+
+        const tdFixture = document.createElement("td");
+        tdFixture.className = "px-6 py-4 text-slate-300";
+        tdFixture.textContent = trace.fixture_id;
+
+        const tdFastest = document.createElement("td");
+        tdFastest.className = "px-6 py-4 text-sky-300";
+        tdFastest.textContent = BACKEND_LABELS[fastest] ?? "-";
+
+        const tdSteps = document.createElement("td");
+        tdSteps.className = "px-6 py-4 text-slate-300";
+        tdSteps.textContent = trace.step_count;
+
+        tr.append(tdId, tdShape, tdFixture, tdFastest, tdSteps);
+        return tr;
+      }),
+    );
   };
 
   searchInput.addEventListener("input", draw);
